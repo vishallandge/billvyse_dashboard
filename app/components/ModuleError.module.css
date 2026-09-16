@@ -1,0 +1,46 @@
+﻿.scene {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: clamp(12px, 2vw, 24px);
+  background: radial-gradient(ellipse at 0% 20%, #dcefff 0, transparent 48%), radial-gradient(ellipse at 100% 85%, #e2f8df 0, transparent 46%), #f8fbff;
+  border-radius: 24px;
+  isolation: isolate;
+}
+.card {
+  box-sizing: border-box;
+  width: min(100%, 680px);
+  min-width: 0;
+  padding: clamp(18px, 2.5vw, 28px);
+  text-align: center;
+  background: #fff;
+  border: 1px solid #cce0fc;
+  border-radius: 30px;
+  box-shadow: 0 20px 65px #1267c512;
+  animation: enter .5s ease-out both;
+}
+/* Frame the supplied logo so its large outer margins do not shrink the wordmark. */
+.logoFrame { position: relative; width: min(100%, 300px); aspect-ratio: 2.4; overflow: hidden; margin: 0 auto 4px; border-radius: 12px; }
+.logo { position: absolute; display: block; width: 110%; max-width: none; height: auto; left: -5%; top: -38%; }
+.art { width: min(100%, 320px); margin: 0 auto 8px; animation: float 5s ease-in-out infinite; }
+.art img { display: block; width: 100%; height: auto; }
+.title { margin: 0 0 10px; color: #081b42; font-size: clamp(22px, 2.6vw, 32px); line-height: 1.2; font-weight: 750; letter-spacing: -.025em; overflow-wrap: anywhere; text-wrap: balance; }
+.hint { max-width: 490px; margin: 0 auto; color: #61708a; font-size: clamp(14px, 1.4vw, 16px); line-height: 1.6; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 20px; }
+.retry, .explore { display: inline-flex; align-items: center; justify-content: center; gap: 12px; box-sizing: border-box; min-width: 0; min-height: 48px; padding: 12px 20px; border-radius: 18px; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; transition: transform .2s, box-shadow .2s; }
+.retry { border: 1px solid #0753df; color: #fff; background: linear-gradient(135deg, #1285ff, #064be0); box-shadow: 0 8px 22px #0865e52b; }
+.explore { border: 1px solid #c4edbb; color: #155624; background: linear-gradient(135deg, #f2fdef, #e2f9d9); }
+.retry:hover:not(:disabled), .explore:hover { transform: translateY(-2px); box-shadow: 0 10px 24px #1267c526; }
+.retry:focus-visible, .explore:focus-visible { outline: 3px solid #1471e8; outline-offset: 4px; }
+.retry:disabled { opacity: .7; cursor: wait; }
+.retry span { display: inline-flex; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 480px) { .scene { padding: 12px; border-radius: 18px; } .card { padding: 18px 14px; border-radius: 22px; } .logoFrame { width: min(100%, 260px); } .art { width: min(100%, 250px); } .actions { flex-direction: column; } .retry, .explore { width: 100%; box-sizing: border-box; } }
+@media (prefers-reduced-motion: reduce) { .card, .art, .spinning { animation: none; } .retry, .explore { transition: none; } }
+
+@media (max-height: 740px) and (min-width: 481px) { .scene { padding: 12px; } .card { padding: 18px 24px; } .logoFrame { width: 240px; } .art { width: 240px; } .actions { margin-top: 16px; } }

@@ -1,0 +1,11 @@
+{
+  "appId": "app.billvyse.dukandar",
+  "appName": "BillVyse",
+  "webDir": "out",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

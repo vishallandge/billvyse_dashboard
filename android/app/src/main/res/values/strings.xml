@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BillVyse</string>
+    <string name="title_activity_main">BillVyse</string>
+    <string name="package_name">app.billvyse.dukandar</string>
+    <string name="custom_url_scheme">app.billvyse.dukandar</string>
+</resources>

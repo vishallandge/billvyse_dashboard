@@ -1,0 +1,78 @@
+THIRD-PARTY NOTICES — BillVyse
+==============================
+
+Almost everything you see in this application was made for it. The artwork in
+particular is hand-written geometry in source code, not licensed imagery:
+
+  dashboard/app/components/Illustration.js   empty-state scenes, per business type
+  dashboard/app/components/CategoryArt.js    (storefront) product tile motifs
+  frontend/app/supplier/StateArt.js          supplier portal state scenes
+  frontend/app/components/Icons.js           the storefront's own icon set
+  public/billvyse-*.png, brand-*.png         the BillVyse marks
+
+No stock photography, no Freepik / Unsplash / Flaticon assets, and no
+AI-generated raster images are used anywhere. That is deliberate: a stock
+licence grants permission, not ownership, and an AI-generated raster has no
+human author to register a copyright to in India. Drawn geometry is owned
+outright, tints itself correctly in light and dark mode, and weighs a few
+hundred bytes instead of ~80KB.
+
+The two things this application does redistribute from others are listed below,
+with the notices their licences require.
+
+
+-------------------------------------------------------------------------------
+1. Phosphor Icons — MIT License
+-------------------------------------------------------------------------------
+
+dashboard/app/components/Icons.js contains path data copied from Phosphor Icons
+(@phosphor-icons/core v2.1.1, assets/duotone and assets/regular).
+
+The full MIT licence text, as its terms require when the source is
+redistributed, is kept alongside the file it applies to:
+
+  dashboard/app/components/ICONS-LICENSE.txt
+
+Copyright (c) 2023 Phosphor Icons.
+
+
+-------------------------------------------------------------------------------
+2. Fonts — SIL Open Font License 1.1
+-------------------------------------------------------------------------------
+
+Three typefaces are loaded through next/font/google, which downloads them at
+BUILD time and self-hosts the .woff2 files from this application's own domain
+(see .next/static/media/). Because the font files are therefore distributed by
+this application and not merely linked to, their notices belong here:
+
+  Inter                  Copyright (c) 2016 The Inter Project Authors
+                         https://github.com/rsms/inter
+
+  Sora                   Copyright (c) 2020 The Sora Project Authors
+                         https://github.com/soratypeface/Sora
+
+  Noto Sans Devanagari   Copyright (c) Google LLC
+                         https://github.com/notofonts/devanagari
+
+All three are licensed under the SIL Open Font License, Version 1.1. In
+summary, the licence permits the fonts to be used, studied, modified and
+redistributed freely, including bundled with software, provided they are not
+sold by themselves and any derivative retains the same licence.
+
+The authoritative full text is published at:
+
+  https://openfontlicense.org/open-font-license-official-text/
+
+>>> If you want belt-and-braces compliance, paste the full OFL 1.1 text in
+>>> place of this note. It is a single page and the licence asks for it to
+>>> travel with the font files. Everything above is accurate as it stands;
+>>> this is the one thing left to complete.
+
+
+-------------------------------------------------------------------------------
+Everything else
+-------------------------------------------------------------------------------
+
+Runtime and build dependencies (Next.js, React, Express, Mongoose and the rest)
+carry their own licences inside node_modules/ and are not redistributed as part
+of this application's published assets.

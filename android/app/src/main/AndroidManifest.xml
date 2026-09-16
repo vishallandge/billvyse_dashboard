@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions
+
+         Every one of these has to be justified to a Play reviewer, and an unused one is a
+         question asked for no benefit — so this list is exactly what the app actually uses
+         today, and nothing held in reserve. -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The barcode/QR scanner (lib/scanCode.js) and the supplier-bill photo capture. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Web push. Required from Android 13; without it notifications are dropped silently
+         rather than refused, so it looks like the server never sent them. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- "Capture shop location" in Settings, which sets the delivery radius. COARSE only,
+         deliberately: FINE is not needed for a radius and drags in the prominent-disclosure
+         requirements (see §5). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- DELIBERATELY ABSENT: BLUETOOTH_CONNECT / BLUETOOTH_SCAN.
+
+         The BLE thermal printer (lib/blePrinter.js) is built on the Web Bluetooth API, and
+         Android's WebView — which is what Capacitor renders in — does not implement it. The
+         permission would therefore grant nothing: the API is simply not on `navigator`.
+         (This is the one place the abandoned TWA plan was better, since a TWA is Chrome.)
+
+         Fixing it means routing blePrinter through a native plugin
+         (@capacitor-community/bluetooth-le) when running in the app. Until that is done the
+         printer is a web-only feature, and asking for the permission would be asking a
+         reviewer to approve something the app cannot use. -->
+</manifest>

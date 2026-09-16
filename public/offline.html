@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f5f8ff">
+<title>Connection paused · BillVyse</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;color:#18263e;background:radial-gradient(ellipse at 50% 36%,#e8efff 0,#f5f8ff 45%,#fafbfd 80%);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:11px;padding:28px 40px}
+header img{width:42px;height:42px;object-fit:contain;border-radius:12px}
+.brand{font-size:19px;font-weight:750;letter-spacing:-.6px}
+.brand small{display:block;margin-top:3px;color:#64748b;font-size:10px;letter-spacing:2.6px;font-weight:600}
+main{flex:1;display:grid;place-items:center;padding:30px 20px 64px}
+.card{width:min(100%,480px);padding:42px 38px 30px;border:1px solid #fff;border-radius:28px;background:#ffffffed;box-shadow:0 24px 80px #23467a12,0 2px 8px #23467a05;text-align:center}
+.illustration{position:relative;display:grid;place-items:center;width:180px;height:180px;margin:0 auto 26px;border:1px solid #e4ebf8;border-radius:50%;background:#f8faff}
+.illustration:before{content:"";position:absolute;inset:17px;border:1px dashed #cddbf5;border-radius:50%}
+.logo{width:104px;height:104px;padding:9px;object-fit:contain;position:relative;background:white;border:1px solid #edf1f8;border-radius:25px;box-shadow:0 10px 25px #315ca51a}
+.connection-icon{position:absolute;right:7px;bottom:14px;display:grid;place-items:center;width:44px;height:44px;border:5px solid white;border-radius:50%;color:#b77919;background:#fff2d8}
+.badge{display:inline-flex;align-items:center;gap:7px;border:1px solid #f6e5c7;border-radius:30px;padding:6px 11px;color:#94601c;background:#fffaf0;font-size:11px;font-weight:650;letter-spacing:.5px}
+.dot{width:6px;height:6px;border-radius:50%;background:#d79934}
+h1{margin:17px 0 12px;font-size:clamp(28px,5vw,34px);line-height:1.2;letter-spacing:-1.2px;font-weight:750}
+.description{margin:0 auto 26px;max-width:330px;font-size:14px;line-height:1.8;color:#64748b}
+button{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:49px;border:0;border-radius:12px;background:#2563eb;color:white;font:inherit;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 5px 12px #2563eb20;transition:background .2s,transform .2s}
+button:hover{background:#1d4ed8;transform:translateY(-1px)}
+button:focus-visible{outline:3px solid #93b4ff;outline-offset:4px}
+button:disabled{cursor:wait;opacity:.7;transform:none}
+.hint{margin:17px 0 0;min-height:36px;font-size:12px;line-height:1.6;color:#748298}
+.tip{margin-top:23px;padding-top:21px;border-top:1px solid #edf1f7;display:flex;align-items:flex-start;justify-content:center;gap:8px;text-align:left;font-size:12px;line-height:1.7;color:#64748b}
+.tip svg{flex-shrink:0;margin-top:2px;color:#8a9bb4}
+footer{padding:0 20px 24px;text-align:center;color:#8995a8;font-size:11px;letter-spacing:.2px}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:520px){header{padding:22px}main{padding:20px 16px 36px}.card{padding:30px 24px 25px;border-radius:24px}.illustration{width:154px;height:154px;margin-bottom:23px}}
+@media(prefers-reduced-motion:reduce){button{transition:none}}
+</style>
+</head>
+<body>
+<header><img src="/icon-192.png" alt=""><div class="brand">BillVyse</div></header>
+<main>
+<section class="card" aria-labelledby="title">
+<div class="illustration">
+<img class="logo" src="/icon-192.png" alt="BillVyse logo">
+<span class="connection-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M2 8.5a16 16 0 0 1 3-2M9 5a16 16 0 0 1 13 3.5M5 12a11 11 0 0 1 3-1.7M13 10a11 11 0 0 1 6 2M8.5 15.5a5 5 0 0 1 7 0M12 19h.01"/></svg></span>
+</div>
+<span class="badge"><span class="dot"></span> CONNECTION PAUSED</span>
+<h1 id="title">A little pause.<br>We'll be right here.</h1>
+<p class="description">We can't connect to BillVyse right now. Check your internet connection and let's get your dukaan back on track.</p>
+<button id="retry" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17"/></svg><span id="button-label">Try again</span></button>
+<p class="hint" id="status" role="status" aria-live="polite">We'll automatically try again when<br>your connection returns.</p>
+<div class="tip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 2H9s0-1-1-2Z"/></svg><span>Quick tip: Check your Wi-Fi or mobile data,<br>then give it another try.</span></div>
+</section>
+</main>
+<footer>BillVyse · Ready when you are.</footer>
+<script>
+const retry = document.getElementById('retry');
+const status = document.getElementById('status');
+function reconnect() {
+  if (retry.disabled) return;
+  if (!navigator.onLine) {
+    status.textContent = 'Still offline. Turn on Wi-Fi or mobile data, then try again.';
+    return;
+  }
+  retry.disabled = true;
+  document.getElementById('button-label').textContent = 'Reconnecting…';
+  status.textContent = 'Opening your dukaan…';
+  if (location.pathname === '/offline.html') location.replace('/seller');
+  else location.reload();
+}
+retry.addEventListener('click', reconnect);
+window.addEventListener('online', reconnect);
+</script>
+</body>
+</html>

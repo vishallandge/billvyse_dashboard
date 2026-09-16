@@ -1,0 +1,27 @@
+{
+  "name": "speedvyapar-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "build:mobile": "node scripts/buildMobile.mjs",
+    "start": "next start -p 3001",
+    "theme:gen": "node scripts/genThemeTokens.mjs",
+    "theme:audit": "node scripts/auditContrast.mjs app/globals.css ../frontend/app/globals.css",
+    "theme:check": "node scripts/genThemeTokens.mjs --check",
+    "check:fonts": "node scripts/checkFonts.js",
+    "make:assetlinks": "node scripts/makeAssetlinks.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "html5-qrcode": "^2.3.8",
+    "next": "14.2.35",
+    "qrcode": "^1.5.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "socket.io-client": "^4.8.3"
+  }
+}

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment files — never commit any of these (they hold real keys).
+# .env.local.example is the committed template; it holds no values.
+.env
+.env.*
+!.env.local.example
+
+# Next.js build output. `.next-*` catches .next-dev and the one-off verification
+# builds NEXT_BUILD_DIR produces (see next.config.mjs), `out/` is the static
+# export that Capacitor carries inside the APK.
+.next/
+.next-*/
+out/
+build/
+dist/
+coverage/
+
+# Capacitor: the Android project is kept, everything Gradle regenerates is not.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+*.apk
+*.aab
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+.DS_Store
