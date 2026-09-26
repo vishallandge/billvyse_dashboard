@@ -7,7 +7,8 @@ import { apiFetch, API_URL, downloadFile } from '../../../lib/api';
 import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
 import { useLanguage } from '../../components/LanguageProvider';
 import { PhotoFallback } from '../../components/CategoryArt';
-import { formatRupees } from '../../../lib/format';
+import { formatQty, formatRupees } from '../../../lib/format';
+import { apiErrorMessage } from '../../../lib/apiErrors';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { startBarcodeScanner } from '../../../lib/barcodeScanner';
@@ -63,12 +64,25 @@ import {
 } from '../../../lib/catalog';
 import { businessType, businessTypeOptions, tradeUses, DEFAULT_BUSINESS_TYPE } from '../../../lib/businessTypes';
 import Illustration from '../../components/Illustration';
+import ImportProgress, { importAddedNothing } from '../../components/ImportProgress';
+import { fetchProductImportPreview } from '../../../lib/productImportPreview';
 import { recordHref } from '../../../lib/routeId';
 
 const ADJUSTMENT_TYPES = ['damage', 'theft', 'self_use', 'correction'];
 // Mirrors MAX_IMPORT_BYTES in backend/utils/uploadGuard.js. If one moves, move both —
 // a browser that allows more than the server does is a 413 with no explanation.
 const IMPORT_MAX_MB = 2;
+
+/**
+ * Failures after which the import may STILL BE RUNNING on the server.
+ *
+ * Node cannot cancel work already in flight, so a request that timed out, dropped or was
+ * told "already being saved" has not been undone — it has only stopped being watched. The
+ * card has to say so, because the obvious next move after an error is to press Import
+ * again, and doing that while the first copy is still inserting rows is how a shop ends up
+ * with its whole catalog twice.
+ */
+const MAY_STILL_BE_RUNNING = new Set(['REQUEST_TIMEOUT', 'NETWORK_UNREACHABLE', 'IDEMPOTENCY_IN_PROGRESS']);
 const DENSITY_KEY = 'dukaan_table_density';
 // A shop that routinely fills in GST/HSN/barcode on every product had to click "More
 // details" open on every single add — remembered per-browser so it opens the way this
@@ -410,9 +424,77 @@ function SellerProductsPageInner() {
   const [submitting, setSubmitting] = useState(false);
   const [adjustProduct, setAdjustProduct] = useState(null);
   const [adjustments, setAdjustments] = useState([]);
-  const [importing, setImporting] = useState(false);
+  /**
+   * Where the import dialog is: 'idle' (the three numbered steps), 'running' (the progress
+   * card) or 'done' (the same card, holding the count).
+   *
+   * One value rather than a pile of booleans because the three are mutually exclusive and
+   * the dialog's width, its close button and its footer all read off it. `importStage` is
+   * which of the three lines on the running card is current, and it is moved only by real
+   * events — see handleImportFile.
+   */
+  const [importPhase, setImportPhase] = useState('idle');
+  const [importStage, setImportStage] = useState(0);
+  // Name and size of the sheet being sent, so the card can show the seller their own file
+  // rather than a spinner. Not the File object: nothing here needs the bytes again.
+  const [importFile, setImportFile] = useState(null);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState('');
+  // Whether the refused rows are expanded on the finished card. Collapsed by default: on a
+  // clean run there is nothing behind it, and on a messy one the count comes first.
+  const [importDetails, setImportDetails] = useState(false);
+  /**
+   * A run that broke, as opposed to a run that finished badly.
+   *
+   * Held apart from `importError`, which is the red banner on the INSTRUCTIONS screen and
+   * belongs to the checks that happen before anything is sent — wrong file type, too big.
+   * Once the sheet is on its way, bouncing back to a screen of numbered steps with a line
+   * of English server text over it throws away the two things the shopkeeper needs most:
+   * where it broke, and whether any of their catalog changed. So that failure gets a card.
+   *
+   * `reached` is the whole point of the shape: it records whether the bytes actually left
+   * the device, because "nothing was sent, try again" and "it is on the server and may
+   * still be running" are opposite instructions and look identical from here.
+   */
+  const [importFail, setImportFail] = useState(null);
+  // What the server said the sheet WOULD do, held on screen while the seller decides.
+  const [importPreview, setImportPreview] = useState(null);
+  const [importStockMode, setImportStockMode] = useState('keep');
+  const [importPriceMode, setImportPriceMode] = useState('keep');
+  const [importResolutions, setImportResolutions] = useState({});
+  const [importReviewBusy, setImportReviewBusy] = useState(false);
+  const importWritingRef = useRef(false);
+  const importPreviewRequestRef = useRef(false);
+  const [importCooldown, setImportCooldown] = useState({ preview: 0, write: 0 });
+  const [importClock, setImportClock] = useState(() => Date.now());
+  const previewWait = Math.max(0, Math.ceil((importCooldown.preview - importClock) / 1000));
+  const writeWait = Math.max(0, Math.ceil((importCooldown.write - importClock) / 1000));
+  useEffect(() => {
+    setImportClock(Date.now());
+    if (!importOpen || Math.max(importCooldown.preview, importCooldown.write) <= Date.now()) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setImportClock(now);
+      if (now >= Math.max(importCooldown.preview, importCooldown.write)) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [importOpen, importCooldown]);
+
+  function pauseImport(err, kind) {
+    const seconds = Math.max(1, Math.ceil(Number(err.retryAfter) || 60));
+    const now = Date.now();
+    setImportClock(now);
+    setImportCooldown((previous) => ({ ...previous, [kind]: now + seconds * 1000 }));
+  }
+  /**
+   * The encoded sheet, kept between the preview and the confirm.
+   *
+   * A ref, not state: it is up to two megabytes of base64 that nothing renders, and putting
+   * it in state would re-render a page holding five thousand product rows for no reason.
+   * Cleared on every way out, so a dialog abandoned halfway does not leave the last sheet
+   * sitting in memory for the rest of the session.
+   */
+  const importBytesRef = useRef(null);
   // Which trade the sample file is filled with. Starts on this shop's own business type —
   // a chemist should never have to pick "Medical" to be shown strips — but stays changeable,
   // because a shop signed up as "Something else" and a shop that sells two things both
@@ -432,10 +514,13 @@ function SellerProductsPageInner() {
   const scannerRef = useRef(null);
   const searchRef = useRef(null);
 
+  // Returns the promise. Nothing used to, and nothing needed to — until the import card
+  // grew a "Finalizing import" step, which is only honest if it ends when the catalog
+  // behind the dialog has really come back.
   function load() {
     setLoading(true);
     setLoadError('');
-    apiFetch('/api/seller/products')
+    return apiFetch('/api/seller/products')
       .then((data) => setProducts(data.products))
       .catch((err) => setLoadError(err.message))
       .finally(() => setLoading(false));
@@ -1196,6 +1281,192 @@ function SellerProductsPageInner() {
    * ZIP, so a real one starts with PK\x03\x04 — which is also how a file renamed to .xlsx
    * gives itself away before it costs anybody an upload.
    */
+  /* Out of the dialog for good: nothing here survives to the next import, so a sheet that
+     went wrong on Tuesday cannot greet the shopkeeper on Wednesday. */
+  function closeImport() {
+    setImportOpen(false);
+    setImportPhase('idle');
+    setImportFile(null);
+    setImportResult(null);
+    setImportDetails(false);
+    setImportFail(null);
+    setImportPreview(null);
+    setImportStockMode('keep');
+    setImportPriceMode('keep');
+    setImportResolutions({});
+    importBytesRef.current = null;
+  }
+
+  /* Back to the instructions with the file picker on them, dialog still open. The error is
+     cleared too — whatever the last sheet did, the next one has not done it yet. */
+  function resetImport() {
+    setImportPhase('idle');
+    setImportFile(null);
+    setImportResult(null);
+    setImportDetails(false);
+    setImportError('');
+    setImportFail(null);
+    setImportPreview(null);
+    setImportStockMode('keep');
+    setImportPriceMode('keep');
+    setImportResolutions({});
+    importBytesRef.current = null;
+  }
+
+  /**
+   * Broke, rather than finished badly. Shared by all three requests this dialog can make.
+   *
+   * Three things are worked out here, because the card cannot work them out for itself:
+   *
+   *   the sentence   — apiErrorMessage, not err.message. The API answers with a stable
+   *                    `code` and an English line on purpose (see lib/apiErrors.js), and
+   *                    reading err.message straight is how "Too many changes at once."
+   *                    ends up on a Marathi screen.
+   *   how long       — a 429 or a 503 carries the seconds it wants us to wait. The retry
+   *                    layer has already sat out anything short, so a number that reaches
+   *                    here is one the shopkeeper has to be told.
+   *   what happened to their catalog — see `maybeRan`.
+   *
+   * `maybeRan` is the one that matters. A timeout, a dropped connection or "already being
+   * saved" all mean the server HAS the sheet and may still be working through it; the
+   * request gave up, the import did not. Telling someone "please try again" there is how a
+   * catalog ends up imported twice. Everything else — a refusal, a plan wall, a rate limit
+   * — was decided before a single row was written, so it is safe to say nothing changed.
+   *
+   * `reached` is false only for the preview's own upload and the checks before it, where
+   * genuinely nothing has been sent yet.
+   */
+  function failImport(err, reached, requestKind = 'write') {
+    const code = err.code || '';
+    if (err.status === 429) {
+      const kind = code === 'RATE_LIMIT_IMPORT_PREVIEW' ? 'preview' : requestKind;
+      pauseImport(err, kind);
+      setImportPhase(importPreview ? 'review' : 'paused');
+      return;
+    }
+    const maybeRan =
+      reached &&
+      (MAY_STILL_BE_RUNNING.has(code) || err.status === 0 || err.status >= 500 || err.status === 409);
+
+    setImportPreview(null);
+    setImportStockMode('keep');
+    setImportPriceMode('keep');
+    setImportResolutions({});
+    setImportFail({
+      message: apiErrorMessage(lang, err),
+      code,
+      retryAfter: Number(err.retryAfter) > 0 ? Math.ceil(Number(err.retryAfter)) : 0,
+      reached,
+      maybeRan,
+    });
+    // The list behind the dialog is refreshed either way. If some rows did land before it
+    // broke, "View products" must show them — and a GET costs nothing that just failed.
+    if (reached) load();
+    setImportPhase('failed');
+  }
+
+  /**
+   * Sends the sheet to be written, and lands the answer on the finished card.
+   *
+   * Split out of handleImportFile because there are now two ways in: straight through, when
+   * the sheet holds nothing the shop already has, and from the review screen once the seller
+   * has chosen what to do about the rows it does. Both have to report identically — a run
+   * confirmed from the review screen that summarised itself differently would undo the point
+   * of showing the summary.
+   *
+   * `mode` is 'add' (a barcode the shop already has is refused) or 'merge' (it is updated
+   * from the sheet). The server defaults to 'add', so nothing that skips this path changes.
+   */
+  async function resolveImportMatch(row, decision, stockMode = importStockMode, priceMode = importPriceMode) {
+    if (importPreviewRequestRef.current || importCooldown.preview > Date.now()) return;
+    importPreviewRequestRef.current = true;
+    const fileBase64 = importBytesRef.current;
+    const resolutions = row == null ? importResolutions : { ...importResolutions, [row]: decision };
+    setImportReviewBusy(true);
+    try {
+      const preview = await fetchProductImportPreview(apiFetch, {
+        fileBase64, sheetToken: importPreview?.sheetToken, resolutions, stockMode, priceMode,
+      });
+      if (importBytesRef.current !== fileBase64) return;
+      setImportResolutions(resolutions);
+      setImportStockMode(stockMode);
+      setImportPriceMode(priceMode);
+      setImportPreview(preview);
+      setImportPhase('review');
+    } catch (err) {
+      if (err.status === 429) pauseImport(err, 'preview');
+      else toast.error(apiErrorMessage(lang, err));
+    }
+    finally { importPreviewRequestRef.current = false; setImportReviewBusy(false); }
+  }
+
+  async function runImport(fileBase64, mode) {
+    if (importWritingRef.current || importPreviewRequestRef.current || importCooldown.write > Date.now()) return;
+    importWritingRef.current = true;
+    setImportStage(1);
+    setImportPhase('running');
+    try {
+      const data = await apiFetch('/api/seller/products/import', {
+        method: 'POST',
+        body: JSON.stringify({ fileBase64, mode, stockMode: importStockMode, priceMode: importPriceMode, resolutions: importResolutions }),
+        /**
+         * The two defaults in lib/net.js are wrong for this one request, and between them
+         * they are how a shop ended up with its catalog imported twice.
+         *
+         * timeoutMs: the default is 30 seconds. bulkImportProducts does a Product.create
+         * plus two store-stock writes per row, one after another, so a real catalog is
+         * minutes — the deadline was firing on a healthy import that was going perfectly
+         * well, and the abort looks exactly like a dead connection from here.
+         *
+         * retries: writes normally get two, which is safe because the idempotency key makes
+         * a replay free. It is not free here. Even now that the key survives a timeout (see
+         * middleware/idempotency.js), an automatic retry can only be told "this is already
+         * being saved" — a true sentence that reads as a fresh failure. One honest attempt,
+         * and a card that explains what happened, beats a silent second copy of the most
+         * expensive request in the app.
+         */
+        timeoutMs: 3 * 60 * 1000,
+        retries: 0,
+      });
+
+      // The server has answered. The last step is the catalog behind this dialog catching
+      // up, and it is awaited rather than fired and forgotten so that "View products"
+      // cannot land the seller on the list they had before the import.
+      setImportStage(2);
+      await load();
+
+      /**
+       * Every finished run stays on screen until it has been read.
+       *
+       * A clean import used to close the dialog and drop a toast, which is four seconds of
+       * one sentence over a list of five thousand rows: by the time the shopkeeper looked up
+       * from the sheet they had just uploaded, the answer to "how many went in?" had gone.
+       */
+      const refused = (data.errors?.length || 0) + (data.moreErrors || 0) + (data.skipped || 0);
+      const touched = (data.created || 0) + (data.updated || 0) + (data.unchanged || 0);
+
+      // Header row present, no product rows under it — nothing to do and nothing to complain
+      // about per row, which would otherwise show as a bare "0 products added." The one
+      // outcome that is a mistake rather than a result, so it goes back to the instructions
+      // with the reason on it instead of onto a card headed "Import complete".
+      if (touched === 0 && refused === 0) {
+        setImportError(t('seller.importNothing'));
+        setImportPhase('idle');
+        return;
+      }
+
+      setImportResult(data);
+      // Expanded from the start when nothing landed. On a good run the refused rows are a
+      // footnote; on a run that changed nothing they are the entire story, and making the
+      // seller press a link to find out why is making them ask twice.
+      setImportDetails((data.created || 0) + (data.updated || 0) === 0);
+      setImportPhase('done');
+    } catch (err) {
+      failImport(err, true);
+    }
+    finally { importWritingRef.current = false; }
+  }
+
   async function handleImportFile(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1203,6 +1474,7 @@ function SellerProductsPageInner() {
 
     setImportError('');
     setImportResult(null);
+    setImportDetails(false);
 
     if (file.size > IMPORT_MAX_MB * 1024 * 1024) {
       setImportError(t('seller.importTooBig', { mb: IMPORT_MAX_MB }));
@@ -1213,12 +1485,35 @@ function SellerProductsPageInner() {
       return;
     }
 
-    setImporting(true);
+    /**
+     * From here the dialog becomes the progress card, and the three lines on it are moved
+     * by the three things that actually happen — never by a timer, and never towards a
+     * percentage nobody measured.
+     *
+     *   stage 0  reading the sheet off the disk, checking it is really an .xlsx, and
+     *            encoding it. On a 2MB file on a cheap phone this is seconds of real work.
+     *   stage 1  the bytes are with the server and it has not answered. This is the long
+     *            one: ExcelJS parses the sheet and every row is a Product.create() plus
+     *            two store-stock writes.
+     *   stage 2  the answer is in, and the catalog behind the dialog is being reloaded.
+     *
+     * The card only ever claims a step is finished once its await has returned, which is
+     * why "File uploaded" can be trusted — and why there is no fourth, invented step.
+     */
+    setImportFile({ name: file.name, size: file.size });
+    setImportStage(0);
+    setImportPhase('running');
+    setImportFail(null);
+    /* Not the `importStage` state: this is read inside the catch below, and a state variable
+       read from the closure that set it is the stale one. A plain local is always the truth
+       at the moment it is checked. */
+    let reached = false;
     try {
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       if (bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) {
         setImportError(t('seller.importNotXlsx'));
+        setImportPhase('idle');
         return;
       }
 
@@ -1232,42 +1527,40 @@ function SellerProductsPageInner() {
       }
       const fileBase64 = btoa(parts.join(''));
 
-      const data = await apiFetch('/api/seller/products/import', {
-        method: 'POST',
-        body: JSON.stringify({ fileBase64 }),
-      });
-      load();
+      // The sheet has been read and checked and is on its way out. That is the first tick,
+      // and from here on a failure can no longer promise that nothing happened.
+      setImportStage(1);
+      reached = true;
+      importBytesRef.current = fileBase64;
 
       /**
-       * A clean run gets out of the way; anything else stays and explains itself.
+       * Ask what this sheet would DO before doing any of it.
        *
-       * The dialog used to keep both cases open on the same screen, so "412 products
-       * added." and a list of nothing sat under three steps the shopkeeper had already
-       * finished with — and they had to scroll to find out it had worked, then close it
-       * themselves. A run is clean only if something was actually created AND nothing was
-       * refused: a partial import is not a success with a footnote, it is a sheet that
-       * needs fixing, and it belongs on screen until it has been read.
+       * This is the whole answer to "Duplicate barcode". A seller who keeps their catalog in
+       * Excel, corrects it and sends it back was shown a wall of red and lost every
+       * corrected rate in silence — the import only ever added, so a barcode the shop
+       * already had was refused rather than updated. The refusal was visible and harmless;
+       * the dropped price changes were invisible and cost the shop money at the counter.
+       *
+       * The preview writes nothing. What comes back is counts plus a few worked examples,
+       * which is what turns the next screen into a decision the seller can actually take.
        */
-      const refused = (data.errors?.length || 0) + (data.moreErrors || 0) + (data.skipped || 0);
-      if (data.created > 0 && refused === 0) {
-        toast.success(t('seller.importCreated', { count: data.created }));
-        setImportResult(null);
-        setImportOpen(false);
+      setImportPhase('checking');
+      const preview = await fetchProductImportPreview(apiFetch, { fileBase64 });
+
+      /* Only ask when there is something to decide. A first import, or a sheet of genuinely
+         new stock, holds nothing the shop already owns — and putting a confirm screen in
+         front of that is how people learn to click through confirm screens without reading
+         them, which is the one habit this screen cannot afford to teach. */
+      setImportPreview(preview);
+      if (preview.existingRows > 0 || preview.nameMatches?.length || preview.errors?.length || preview.moreErrors || preview.zeroPriceRows || preview.belowCostRows || preview.aboveMrpRows) {
+        setImportPhase('review');
         return;
       }
 
-      // Header row present, no product rows under it — nothing created and nothing to
-      // complain about per row, which would otherwise show as a bare "0 products added."
-      if (data.created === 0 && refused === 0) {
-        setImportError(t('seller.importNothing'));
-        return;
-      }
-
-      setImportResult(data);
+      await runImport(fileBase64, 'add');
     } catch (err) {
-      setImportError(err.message);
-    } finally {
-      setImporting(false);
+      failImport(err, reached, 'preview');
     }
   }
 
@@ -1407,6 +1700,10 @@ function SellerProductsPageInner() {
               onClick={() => {
                 setImportError('');
                 setImportResult(null);
+                setImportPhase('idle');
+                setImportFile(null);
+                setImportDetails(false);
+                setImportFail(null);
                 setImportOpen(true);
               }}
             >
@@ -2183,60 +2480,140 @@ function SellerProductsPageInner() {
 
       {importOpen && canSell && (
         <Modal
-          onClose={() => setImportOpen(false)}
-          title={t('seller.importTitle')}
+          /* Three dialogs' worth of chrome, driven off one value.
+             While the sheet is in flight there is no close button, no Escape and no
+             backdrop dismiss: half an import is not a state this app can undo, and a
+             misplaced tap on a phone is how you get one. Once it has finished the card is
+             fully dismissible again — the seller has read it, or they have not, and that
+             is their call. */
+          onClose={importPhase === 'running' || importPhase === 'checking' ? undefined : closeImport}
+          title={importPhase === 'idle' ? t('seller.importTitle') : undefined}
+          /* The running and finished cards carry their own heading, so the dialog is named
+             by that rather than by a header bar it does not draw. */
+          labelledBy={importPhase === 'idle' ? undefined : 'import-run-title'}
+          className={`import-modal${importPhase === 'idle' ? '' : ' import-modal--run'}${importPhase === 'review' ? ' import-modal--review' : ''}`}
+          /* Keep the width stable; each phase uses only the height its content needs. */
           maxWidth={560}
+          overlayClassName="import-overlay"
+          closeOnBackdrop={importPhase === 'idle'}
+          closeOnEscape={importPhase !== 'running' && importPhase !== 'checking'}
           /* The upload button lives in the pinned action row, not down at step 3 with the
              rest of the instructions. Three numbered steps plus their hints is taller than
              a laptop's viewport, so the one control the shopkeeper opened this dialog to
              press was the first thing to scroll out of sight. `footer` is the band Modal
-             never lets scroll. */
+             never lets scroll.
+             The running card has no footer at all: there is nothing to press while a sheet
+             is being imported, and an empty pinned bar is just a band of dead chrome under
+             a card that is trying to look calm. */
           footer={
-            <label className="btn btn-primary btn-inline" style={{ cursor: importing ? 'progress' : 'pointer' }}>
-              <UploadIcon size={17} />
-              {importing ? t('seller.importing') : t('seller.importProducts')}
-              <input type="file" accept=".xlsx" onChange={handleImportFile} disabled={importing} style={{ display: 'none' }} />
-            </label>
+            importPhase === 'idle' ? (
+              <label className="btn btn-primary btn-inline" style={{ cursor: 'pointer' }}>
+                <UploadIcon size={17} />
+                {t('seller.importProducts')}
+                <input type="file" accept=".xlsx" onChange={handleImportFile} style={{ display: 'none' }} />
+              </label>
+            ) : importPhase === 'review' ? (
+              <div className="import-review-actions">
+                <p className="import-review-intro">{t('seller.importReviewChoose')}</p>
+                <div className="import-review-choice">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={writeWait > 0 || importReviewBusy || Boolean(importPreview?.nameMatches?.length)}
+                    data-tip={t('seller.importReviewMergeHint')}
+                    aria-describedby="import-merge-hint"
+                    onClick={() => runImport(importBytesRef.current, 'merge')}
+                  >
+                    {t('seller.importReviewMerge')}
+                  </button>
+                  <p id="import-merge-hint">{t('seller.importReviewMergeHint')}</p>
+                </div>
+                <div className="import-review-choice">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    data-tip={t(importPreview?.newRows > 0 ? 'seller.importReviewAddHint' : 'seller.importReviewAddZeroHint', { count: formatQty(importPreview?.newRows || 0, lang) })}
+                    disabled={writeWait > 0 || importReviewBusy || Boolean(importPreview?.nameMatches?.length)}
+                    aria-describedby="import-add-hint"
+                    onClick={() => runImport(importBytesRef.current, 'add')}
+                  >
+                    {t('seller.importReviewAddOnly')}
+                  </button>
+                  <p id="import-add-hint">
+                    {t(importPreview?.newRows > 0 ? 'seller.importReviewAddHint' : 'seller.importReviewAddZeroHint', { count: formatQty(importPreview?.newRows || 0, lang) })}
+                  </p>
+                </div>
+              </div>
+            ) : importPhase === 'paused' ? (
+              <>
+                <button type="button" className="btn btn-primary" disabled={previewWait > 0 || importReviewBusy} onClick={() => resolveImportMatch(null, null)}>
+                  {t('seller.importCheckAgain')}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={closeImport}>{t('common.close')}</button>
+              </>
+            ) : importPhase === 'failed' ? (
+              importFail?.maybeRan ? (
+                <>
+                  {/* The loud action is "go and look", not "do it again". The sheet may
+                      still be going in on the server, and a second import while the first
+                      is running is the one outcome this screen must not make easy. */}
+                  <button type="button" className="btn btn-primary btn-inline" onClick={closeImport}>
+                    {t('seller.importViewProducts')}
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-inline" onClick={resetImport}>
+                    {t('seller.importTryAgain')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Nothing reached the catalog, so trying again is simply the next step. */}
+                  <button type="button" className="btn btn-primary btn-inline" onClick={resetImport}>
+                    {t('seller.importTryAgain')}
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-inline" onClick={closeImport}>
+                    {t('common.close')}
+                  </button>
+                </>
+              )
+            ) : importPhase === 'done' ? (
+              importAddedNothing(importResult) ? (
+                <>
+                  {/* Nothing was added, so "View products" would send the seller to look at
+                      a list that has not changed. What they need is the sheet fixed and sent
+                      again, and that is what the loud button does. */}
+                  <button type="button" className="btn btn-primary btn-inline" onClick={resetImport}>
+                    {t('seller.importAnother')}
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-inline" onClick={closeImport}>
+                    {t('common.close')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* The catalog behind this dialog was reloaded before the card was drawn,
+                      so this really does hand them the list with the new rows in it. */}
+                  <button type="button" className="btn btn-primary btn-inline" onClick={closeImport}>
+                    {t('seller.importViewProducts')}
+                  </button>
+                  {/* A shop that splits its catalog across two sheets imports twice in a row.
+                      Sending them back through the Import button on the page for that is one
+                      click of nothing. */}
+                  <button type="button" className="btn btn-secondary btn-inline" onClick={resetImport}>
+                    {t('seller.importAnother')}
+                  </button>
+                </>
+              )
+            ) : null
           }
         >
-            {/* Above the steps, not below them. A result rendered under step 3 was another
+          {importPhase === 'idle' ? (
+            <>
+            {/* Above the steps, not below them. A message rendered under step 3 was another
                 scroll away from the button that produced it — so the answer to "did it
-                work?" arrived off-screen. Only a run that needs reading gets this far: a
-                clean import closes the dialog and says so in a toast. */}
+                work?" arrived off-screen. Counts and refused rows no longer come out here
+                at all: those belong to the finished card, which the seller is already
+                looking at when they arrive. */}
             {importError && <div className="error-banner" style={{ marginBottom: '0.9rem' }}>{importError}</div>}
-            {importResult && (
-              <div className="import-result">
-                <p className="import-result-head">{t('seller.importCreated', { count: importResult.created })}</p>
-                {importResult.skipped > 0 && (
-                  <p className="import-result-note">
-                    {t('seller.importSkipped', { count: importResult.skipped, limit: importResult.rowLimit })}
-                  </p>
-                )}
-                {importResult.errors?.length > 0 && (
-                  <>
-                    {/* Only the first fifty are drawn. A sheet where every row is wrong
-                        would otherwise put thousands of list items into one dialog and
-                        freeze the phone that is trying to read them — and nobody fixes a
-                        catalog by scrolling past row eight hundred anyway. */}
-                    <ul className="import-result-rows">
-                      {importResult.errors.slice(0, 50).map((e, i) => (
-                        <li key={i}>Row {e.row}: {e.message}</li>
-                      ))}
-                    </ul>
-                    {importResult.errors.length + (importResult.moreErrors || 0) > 50 && (
-                      <p className="import-result-more">
-                        {/* The server stops collecting at 200 and counts the rest in
-                            `moreErrors`, so both halves have to be added up here or a
-                            wholly-broken sheet would under-report itself. */}
-                        {t('seller.importMoreErrors', {
-                          count: importResult.errors.length - 50 + (importResult.moreErrors || 0),
-                        })}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
 
             {/* Step 1 — the sample file. Without it the seller has to guess the column
                 names, and a sheet with the wrong headers imports nothing at all. The file
@@ -2292,6 +2669,32 @@ function SellerProductsPageInner() {
             </div>
 
             <p className="import-warning">{t('seller.importDuplicateWarning')}</p>
+            </>
+          ) : (
+            <ImportProgress
+              phase={importPhase}
+              stage={importStage}
+              file={importFile}
+              result={importResult}
+              detailsOpen={importDetails}
+              /* The catalog was reloaded before this card was drawn, so this is the real
+                 count the shop is now carrying, not the old one plus what went in. */
+              catalogTotal={products.length}
+              error={importFail}
+              preview={importPreview}
+              stockMode={importStockMode}
+              onStockModeChange={(mode) => resolveImportMatch(null, null, mode)}
+              priceMode={importPriceMode}
+              onPriceModeChange={(mode) => resolveImportMatch(null, null, importStockMode, mode)}
+              onResolveMatch={resolveImportMatch}
+              reviewBusy={importReviewBusy || previewWait > 0}
+              previewWait={previewWait}
+              writeWait={writeWait}
+              onToggleDetails={() => setImportDetails((open) => !open)}
+              t={t}
+              lang={lang}
+            />
+          )}
         </Modal>
       )}
 

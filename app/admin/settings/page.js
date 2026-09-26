@@ -259,7 +259,7 @@ export default function AdminPlatformSettingsPage() {
               type="email"
               inputMode="email"
               value={support.email}
-              placeholder={supportLive?.email || 'support@billvyse.com'}
+              placeholder={supportLive?.email || 'billvyse.india@gmail.com'}
               onChange={(e) => patch('support.email', e.target.value)}
             />
             <p className="field-hint">{t('admin.supportEmailHint')}</p>

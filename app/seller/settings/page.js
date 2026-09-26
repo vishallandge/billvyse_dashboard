@@ -32,6 +32,8 @@ import {
   DownloadIcon,
   ClockIcon,
   InfoIcon,
+  PlusIcon,
+  XIcon,
 } from '../../components/Icons';
 import { validateShopProfile, TEXT_LIMITS } from '../../../lib/shopProfileRules';
 import { validateStorefront, storefrontSummaryKeys, WEEKDAY_KEYS } from '../../../lib/storefrontRules';
@@ -178,6 +180,8 @@ const EMPTY_STOREFRONT = {
   allowPickup: true,
   allowDelivery: true,
   allowDineIn: false,
+  requireDeliveryOtp: false,
+  deliverySlots: [],
   prepTimeMinutes: 30,
   openTime: '',
   closeTime: '',
@@ -656,6 +660,36 @@ export default function SellerSettingsPage() {
   // that sends only the switch it changed must not reset the other eleven.
   function setStorefront(field, value) {
     setProfile((current) => ({ ...current, storefront: { ...current.storefront, [field]: value } }));
+  }
+
+  // The shop's delivery rounds. Rows are edited in place and the server is the one that
+  // judges them — it refuses an overlap or a backwards window rather than quietly fixing
+  // it, so nothing here tries to second-guess that.
+  function setSlot(index, key, value) {
+    setProfile((current) => {
+      const slots = [...(current.storefront.deliverySlots || [])];
+      slots[index] = { ...slots[index], [key]: value };
+      return { ...current, storefront: { ...current.storefront, deliverySlots: slots } };
+    });
+  }
+
+  function addSlot() {
+    setProfile((current) => {
+      const slots = [...(current.storefront.deliverySlots || [])];
+      if (slots.length >= 6) return current;
+      slots.push({ start: '', end: '' });
+      return { ...current, storefront: { ...current.storefront, deliverySlots: slots } };
+    });
+  }
+
+  function removeSlot(index) {
+    setProfile((current) => ({
+      ...current,
+      storefront: {
+        ...current.storefront,
+        deliverySlots: (current.storefront.deliverySlots || []).filter((_, i) => i !== index),
+      },
+    }));
   }
 
   function toggleWeeklyOff(day) {
@@ -1281,6 +1315,35 @@ export default function SellerSettingsPage() {
             </div>
           </div>
 
+          {/* The link itself, before any of the rules about it.
+              A shopkeeper who has not said when he opens, or how a customer gets the goods,
+              has a page that cannot answer the first questions anybody asks — and a link
+              like that costs him more than having no link at all. So the switch stays off
+              until the form below is filled, and names exactly what is still missing rather
+              than saying "incomplete".
+              Switching it OFF is always allowed: pulling your own shop down is not a thing
+              to make somebody qualify for. */}
+          <div className={`sf-link${sf.linkLive ? ' is-live' : ''}`}>
+            <label>
+              <input
+                type="checkbox"
+                checked={Boolean(sf.linkLive)}
+                disabled={!sf.linkLive && !sf.readiness?.ready}
+                onChange={(e) => setStorefront('linkLive', e.target.checked)}
+              />
+              <span>
+                <strong>{t('seller.sfLinkLive')}</strong>
+                <small>{sf.linkLive ? t('seller.sfLinkLiveOn') : t('seller.sfLinkLiveOff')}</small>
+              </span>
+            </label>
+            {!sf.readiness?.ready && (
+              <p className="sf-link-missing">
+                {t('seller.sfLinkNeeds')}{' '}
+                {(sf.readiness?.missing || []).map((key) => t(`seller.sfNeed_${key}`)).join(' · ')}
+              </p>
+            )}
+          </div>
+
           <div className="invoice-toggles" style={{ marginTop: '0.9rem' }}>
             <label>
               <input
@@ -1534,6 +1597,69 @@ export default function SellerSettingsPage() {
               {locateError && <small className="field-error-text">{locateError}</small>}
             </div>
           </div>
+
+          {/* Sits with the delivery rules, not with the invoice switches, because it is a
+              rule about how a bag is handed over. Off for a shop that only does pickup. */}
+          {sf.allowDelivery !== false && (
+            <div className="invoice-toggles" style={{ marginTop: '0.9rem' }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={sf.requireDeliveryOtp === true}
+                  onChange={(e) => setStorefront('requireDeliveryOtp', e.target.checked)}
+                />
+                {t('seller.settingsDeliveryOtp')}
+              </label>
+              <small className="field-hint">{t('seller.settingsDeliveryOtpHint')}</small>
+            </div>
+          )}
+
+          {/* "Main sirf subah aur shaam nikalta hoon." Empty is the shop that delivers
+              whenever it can, and then the customer is never asked to choose. */}
+          {sf.allowDelivery !== false && (
+            <div className="field" style={{ marginTop: '0.9rem' }}>
+              <label>{t('seller.settingsSlotsTitle')}</label>
+              <div className="delivery-slot-rows">
+                {(sf.deliverySlots || []).map((slot, index) => (
+                  <div className="delivery-slot-row" key={index}>
+                    <input
+                      type="time"
+                      value={slot.start || ''}
+                      onChange={(e) => setSlot(index, 'start', e.target.value)}
+                      aria-label={t('seller.settingsSlotFrom')}
+                    />
+                    <span>–</span>
+                    <input
+                      type="time"
+                      value={slot.end || ''}
+                      onChange={(e) => setSlot(index, 'end', e.target.value)}
+                      aria-label={t('seller.settingsSlotTo')}
+                    />
+                    <button
+                      type="button"
+                      className="icon-btn danger"
+                      data-tip={t('common.delete')}
+                      onClick={() => removeSlot(index)}
+                    >
+                      <XIcon size={17} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {(sf.deliverySlots || []).length < 6 && (
+                <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={addSlot}>
+                  <PlusIcon size={15} /> {t('seller.settingsSlotAdd')}
+                </button>
+              )}
+              {fieldErrors.deliverySlots ? (
+                <small className="field-error-text">{fieldErrors.deliverySlots}</small>
+              ) : (
+                <small className="field-hint">
+                  {(sf.deliverySlots || []).length ? t('seller.settingsSlotsHint') : t('seller.settingsSlotsNone')}
+                </small>
+              )}
+            </div>
+          )}
 
           {/* The one mistake this panel cannot catch by itself: a radius means nothing
               without a point to measure from, so a shop that set one and never captured its

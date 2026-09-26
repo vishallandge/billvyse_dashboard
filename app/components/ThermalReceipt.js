@@ -33,7 +33,7 @@ function expiryMonth(value) {
   return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(-2)}`;
 }
 
-export default function ThermalReceipt({ receipt, shop, upiLink, t }) {
+export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) {
   // Portals need the DOM; only render after mount to stay SSR-safe.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -193,6 +193,16 @@ export default function ThermalReceipt({ receipt, shop, upiLink, t }) {
         </div>
       )}
 
+      {/* The customer's own link to this bill (no login, PDF download). A thermal slip
+          fades in a month and gets lost sooner; the QR is how a warranty claim or a return
+          still finds the real bill. Not on a UPI-pending slip, which already carries a QR
+          the customer has to scan first — two codes on one slip get scanned in the wrong order. */}
+      {billLink && !(receipt.paymentMode === 'upi' && upiLink) && (
+        <div className="tr-qr">
+          <UpiQr link={billLink} size={110} />
+          <div className="tr-line">{t('seller.billLinkScan')}</div>
+        </div>
+      )}
       <div className="tr-rule tr-dashed" />
 
       <div className="tr-foot">

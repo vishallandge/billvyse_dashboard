@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/api';
 import { useLanguage } from './LanguageProvider';
 import { formatRupees } from '../../lib/format';
@@ -52,6 +53,30 @@ export default function CatalogQuickAdd({ lines = [], onClose, onCreated }) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [capacity, setCapacity] = useState(null);
+
+  /* Check the shelf before writing. This prevents a five-row bill from creating only the
+     first two products and then discovering the plan limit on the third. */
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([apiFetch('/api/seller/products?limit=1'), apiFetch('/api/seller/plan')])
+      .then(([products, planData]) => {
+        if (cancelled) return;
+        const limit = planData?.catalog?.[planData?.plan]?.maxProducts;
+        if (limit == null || !Number.isFinite(Number(limit))) return;
+        const upgrade = Object.values(planData?.catalog || {})
+          .filter((plan) => plan.maxProducts == null || Number(plan.maxProducts) > Number(limit))
+          .sort((a, b) => Number(a.priceMonthly || Infinity) - Number(b.priceMonthly || Infinity))[0];
+        setCapacity({
+          used: Number(products?.total || 0),
+          limit: Number(limit),
+          upgrade: upgrade ? { name: upgrade.name, limit: upgrade.maxProducts, price: upgrade.priceMonthly } : null,
+        });
+      })
+      // The server remains authoritative; a failed preflight must not stop a valid save.
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   function updateRow(index, patch) {
     setRows((current) => current.map((row) => (row.index === index ? { ...row, ...patch, error: '' } : row)));
@@ -59,13 +84,16 @@ export default function CatalogQuickAdd({ lines = [], onClose, onCreated }) {
 
   const chosen = rows.filter((row) => row.include);
   const missingPrice = chosen.filter((row) => !(Number(row.price) > 0));
-  const canSave = chosen.length > 0 && missingPrice.length === 0 && chosen.every((row) => row.name.trim());
+  const remaining = capacity ? Math.max(0, capacity.limit - capacity.used) : null;
+  const overLimit = remaining != null && chosen.length > remaining;
+  const canSave = chosen.length > 0 && !overLimit && missingPrice.length === 0 && chosen.every((row) => row.name.trim());
 
   async function createAll() {
     setSaving(true);
     setError('');
     const created = [];
     const failed = [];
+    let hitProductLimit = false;
 
     // One at a time rather than in parallel: a shop on a counter connection gets a clearer
     // failure this way, and a half-finished batch has to be able to say exactly which rows
@@ -87,10 +115,20 @@ export default function CatalogQuickAdd({ lines = [], onClose, onCreated }) {
             // The goods are still on the wholesaler's van. Stock moves when the order is
             // received, not when the product is created.
             stock: 0,
+            // Bill items become shelf products first; publishing online is a separate decision.
+            showInCatalog: false,
           }),
         });
         created.push({ index: row.index, product });
       } catch (err) {
+        if (err?.code === 'PLAN_COUNT_LIMIT_REACHED' || err?.data?.code === 'PLAN_COUNT_LIMIT_REACHED') {
+          const limit = Number(err?.limit ?? err?.data?.limit);
+          const used = Number(err?.used ?? err?.data?.used);
+          if (Number.isFinite(limit) && Number.isFinite(used)) setCapacity((current) => ({ ...current, limit, used }));
+          hitProductLimit = true;
+          failed.push({ index: row.index, message: t('catalogAdd.limitChanged') });
+          break;
+        }
         failed.push({ index: row.index, message: err.message });
       }
     }
@@ -108,7 +146,7 @@ export default function CatalogQuickAdd({ lines = [], onClose, onCreated }) {
         .filter((row) => !created.some((entry) => entry.index === row.index))
         .map((row) => ({ ...row, error: failed.find((entry) => entry.index === row.index)?.message || row.error }))
     );
-    setError(t('catalogAdd.someFailed', { count: failed.length }));
+    setError(hitProductLimit ? t('catalogAdd.limitChanged') : t('catalogAdd.someFailed', { count: failed.length }));
   }
 
   return (
@@ -129,6 +167,29 @@ export default function CatalogQuickAdd({ lines = [], onClose, onCreated }) {
       }
     >
       {error && <div className="error-banner">{error}</div>}
+
+      {capacity && (
+        <div className={`catalog-add-capacity${overLimit ? ' is-full' : ''}`} role={overLimit ? 'alert' : undefined}>
+          <div>
+            <strong>{t(overLimit ? 'catalogAdd.limitTitle' : 'catalogAdd.capacityTitle')}</strong>
+            <p>{t('catalogAdd.capacityUsed', { used: capacity.used, limit: capacity.limit })}</p>
+            {overLimit ? (
+              <p className="catalog-add-capacity-warning">
+                {remaining > 0
+                  ? t('catalogAdd.selectionTooLarge', { selected: chosen.length, remaining })
+                  : t('catalogAdd.noSpace')}
+              </p>
+            ) : (
+              <p>{t('catalogAdd.capacityAvailable', { remaining })}</p>
+            )}
+          </div>
+          {capacity.upgrade && (
+            <Link className="btn btn-secondary btn-small btn-inline" href="/seller/plan?feature=maxProducts">
+              {t('catalogAdd.upgrade', { plan: capacity.upgrade.name, limit: capacity.upgrade.limit, price: capacity.upgrade.price })}
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="catalog-add-rows">
         {rows.map((row) => (

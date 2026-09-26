@@ -116,7 +116,13 @@ function SupplyScreen() {
           confirm={confirm}
         />
       ) : (
-        <LinkForm onLinked={loadLink} t={t} toast={toast} />
+        <>
+          <EnablePanel onEnabled={loadLink} t={t} toast={toast} />
+          <details className="panel">
+            <summary className="field-label">{t('supply.orByNumber')}</summary>
+            <LinkForm ownPhone={link?.ownPhone || ''} onLinked={loadLink} t={t} toast={toast} />
+          </details>
+        </>
       )}
     </>
   );
@@ -156,12 +162,130 @@ function linkError(err, t) {
     SUPPLY_ALREADY_MINE: 'supply.errAlreadyMine',
     OTP_SEND_FAILED: 'supply.errSendFailed',
     ACCOUNT_INACTIVE: 'supply.errBlocked',
+    SUPPLY_INVITE_INVALID: 'supply.errInviteInvalid',
+    SUPPLY_INVITE_SELF: 'supply.errInviteSelf',
+    SUPPLY_INVITE_OFF: 'supply.errInviteOff',
   }[err.code];
   return key ? t(key) : err.message;
 }
 
-function LinkForm({ onLinked, t, toast }) {
-  const [phone, setPhone] = useState('');
+/**
+ * "Sell to Shops" ON — one tap, no OTP.
+ *
+ * His shop account is already who he is. Turning this on gives him an invite link; shops join
+ * through it. Proving a number is optional and comes later, for the ✓ Verified mark.
+ */
+function EnablePanel({ onEnabled, t, toast }) {
+  const [busy, setBusy] = useState(false);
+  async function enable() {
+    setBusy(true);
+    try {
+      await apiFetch('/api/seller/supply/enable', { method: 'POST' });
+      onEnabled();
+    } catch (err) {
+      toast.error(linkError(err, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="panel">
+      <h2>{t('supply.enableTitle')}</h2>
+      <p className="field-hint" style={{ marginBottom: '0.9rem' }}>{t('supply.enableBody')}</p>
+      <button className="btn btn-primary" disabled={busy} onClick={enable}>
+        {busy ? t('common.saving') : t('supply.enableBtn')}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * ✓ Verified — the one place an OTP is still used, and only by choice.
+ *
+ * The code goes to the number on his own shop profile, never a typed one. Proving it puts a
+ * ✓ next to his name on every invite, which is how a shop tells him from somebody who opened
+ * a shop under the same name. Changing the number in Settings takes the ✓ away.
+ */
+function VerifyCard({ ownPhone, onVerified, t, toast }) {
+  const [stage, setStage] = useState('start');
+  const [otp, setOtp] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [devOtp, setDevOtp] = useState('');
+  const hasPhone = /^\d{10}$/.test(ownPhone || '');
+
+  async function send() {
+    setBusy(true);
+    try {
+      const data = await apiFetch('/api/seller/supply/request-otp', { method: 'POST', body: JSON.stringify({ phone: ownPhone }) });
+      if (data.devOtp) setDevOtp(data.devOtp);
+      setStage('otp');
+    } catch (err) {
+      toast.error(linkError(err, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify() {
+    setBusy(true);
+    try {
+      await apiFetch('/api/seller/supply/verify-otp', { method: 'POST', body: JSON.stringify({ phone: ownPhone, otp }) });
+      toast.success(t('supply.verifyDone'));
+      onVerified();
+    } catch (err) {
+      toast.error(linkError(err, t));
+      setOtp('');
+      if (err.code === 'OTP_LOCKED') setStage('start');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div>
+          <h2>{t('supply.verifyTitle')}</h2>
+          <p className="field-hint">{hasPhone ? t('supply.verifyBody', { phone: `••••••${ownPhone.slice(-4)}` }) : t('supply.verifyNeedPhone')}</p>
+        </div>
+        {hasPhone && stage === 'start' && (
+          <div className="panel-tools">
+            <button className="btn btn-secondary btn-small btn-inline" disabled={busy} onClick={send}>
+              {busy ? t('common.saving') : t('supply.verifyBtn')}
+            </button>
+          </div>
+        )}
+      </div>
+      {stage === 'otp' && (
+        <div className="field">
+          <div className="input-action">
+            <input
+              className="input"
+              inputMode="numeric"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="••••••"
+              aria-label={t('supply.otpLabel')}
+            />
+            <button className="btn btn-primary btn-small btn-inline" disabled={busy || otp.length < 4} onClick={verify}>
+              {busy ? t('common.saving') : t('supply.verify')}
+            </button>
+          </div>
+          {devOtp && (
+            <span className="field-hint">
+              {t('supply.testCode')}: <strong>{devOtp}</strong>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinkForm({ ownPhone, onLinked, t, toast }) {
+  // Starts on the shop's own number — the one that always works on day one.
+  const [phone, setPhone] = useState(/^\d{10}$/.test(ownPhone) ? ownPhone : '');
   const [otp, setOtp] = useState('');
   const [stage, setStage] = useState('phone');
   const [busy, setBusy] = useState(false);
@@ -224,6 +348,7 @@ function LinkForm({ onLinked, t, toast }) {
               </button>
             </div>
             <span className="field-hint">{t('supply.phoneHint')}</span>
+            <span className="field-hint">{t('supply.ownNumberHint')}</span>
           </div>
         ) : (
           <label className="field">
@@ -330,6 +455,7 @@ function LinkedSupply({ link, onChanged, deepLinkOrderId, t, lang, toast, confir
       'supply:payment:reply': (p) => t('supply.livePaymentReply', { shop: p.shopName || '' }),
       'supply:bill:resolved': (p) => t('supply.liveBillAnswer', { shop: p.shopName || '' }),
       'supply:return:sent': (p) => t('supply.liveReturn', { shop: p.shopName || '', amount: formatRupees(p.amount || 0, lang) }),
+      'supply:shop:joined': (p) => t('supply.liveShopJoined', { shop: p.shopName || '' }),
     };
     // His own writes, echoed here so a second device stays in step. Silent: telling a man
     // what he just did on the screen he did it on is noise, not news.
@@ -410,6 +536,10 @@ function LinkedSupply({ link, onChanged, deepLinkOrderId, t, lang, toast, confir
         </div>
       </div>
 
+      {!link.verified && <VerifyCard ownPhone={link.ownPhone || ''} onVerified={onChanged} t={t} toast={toast} />}
+
+      <ShopRequests link={link} onChanged={onChanged} t={t} toast={toast} confirm={confirm} />
+
       <div className="panel">
         <div className="panel-head">
           <div className="chip-row">
@@ -426,7 +556,8 @@ function LinkedSupply({ link, onChanged, deepLinkOrderId, t, lang, toast, confir
             ))}
           </div>
           <div className="panel-tools">
-            <span className="cell-sub">{t('supply.linkedAs', { phone: link.phone })}</span>
+            {link.verified && <span className="badge badge-approved">{t('supply.verifiedBadge')}</span>}
+            {link.phone && <span className="cell-sub">{t('supply.linkedAs', { phone: link.phone })}</span>}
             <button className="btn btn-secondary btn-small btn-inline" onClick={unlink}>
               {t('supply.unlink')}
             </button>
@@ -447,6 +578,212 @@ function LinkedSupply({ link, onChanged, deepLinkOrderId, t, lang, toast, confir
         {tab === 'shops' && <ShopsTab shops={me?.shops || []} t={t} lang={lang} />}
         {tab === 'profile' && <ProfileTab account={me?.account} onSaved={loadMe} t={t} toast={toast} />}
       </div>
+    </>
+  );
+}
+
+/* ------------------------------------------------------- requests + invite */
+
+/**
+ * Who may send him orders, and how he brings more shops in.
+ *
+ * "New" shops are ones that saved his number and he has not answered yet. Accept keeps them;
+ * Block hides their orders everywhere (backend utils/supplyScope.js) — the answer to a
+ * stranger filling his inbox. The invite link is the other direction: instead of waiting for
+ * a shop to find his number, he sends one link and the shop adds him in a tap.
+ */
+function ShopRequests({ link, onChanged, t, toast, confirm }) {
+  const [invite, setInvite] = useState(null);
+  const [busy, setBusy] = useState('');
+  const newShops = link.newShops || [];
+  const blockedShops = link.blockedShops || [];
+
+  async function decide(shop, state, { quiet = false } = {}) {
+    await apiFetch(`/api/seller/supply/shops/${shop.shopId}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({ state }),
+    });
+    if (!quiet) {
+      const key = state === 'accepted' ? 'supply.accepted' : state === 'blocked' ? 'supply.blockedDone' : 'supply.unblockedDone';
+      toast.success(t(key, { shop: shop.shopName }));
+    }
+  }
+
+  async function run(shop, state) {
+    if (state === 'blocked') {
+      const ok = await confirm({
+        tone: 'warning',
+        title: t('supply.blockConfirmTitle', { shop: shop.shopName }),
+        body: t('supply.blockConfirmBody'),
+        confirmLabel: t('supply.block'),
+        cancelLabel: t('common.goBack'),
+      });
+      if (!ok) return;
+    }
+    setBusy(shop.shopId);
+    try {
+      await decide(shop, state);
+      onChanged();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function acceptAll() {
+    setBusy('all');
+    try {
+      // One at a time: a handful of shops, and a failure part-way leaves the rest untouched
+      // and visible rather than half-applied in parallel.
+      for (const shop of newShops) await decide(shop, 'accepted', { quiet: true });
+      toast.success(t('supply.acceptAll'));
+      onChanged();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function makeInvite() {
+    setBusy('invite');
+    try {
+      setInvite(await apiFetch('/api/seller/supply/invite', { method: 'POST' }));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function resetInvites() {
+    const ok = await confirm({
+      tone: 'warning',
+      title: t('supply.inviteResetTitle'),
+      body: t('supply.inviteResetBody'),
+      confirmLabel: t('supply.inviteReset'),
+      cancelLabel: t('common.goBack'),
+    });
+    if (!ok) return;
+    setBusy('reset');
+    try {
+      await apiFetch('/api/seller/supply/invite/reset', { method: 'POST' });
+      setInvite(null);
+      toast.success(t('supply.inviteResetDone'));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function copyInvite() {
+    try {
+      await navigator.clipboard.writeText(invite.url);
+      toast.success(t('supply.inviteCopied'));
+    } catch {
+      toast.error(invite.url);
+    }
+  }
+
+  return (
+    <>
+      {newShops.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>{t('supply.newShopsTitle')}</h2>
+              <p className="field-hint">{t('supply.newShopsBody')}</p>
+            </div>
+            {newShops.length > 1 && (
+              <div className="panel-tools">
+                <button className="btn btn-secondary btn-small btn-inline" disabled={Boolean(busy)} onClick={acceptAll}>
+                  {t('supply.acceptAll')}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="record-cards">
+            {newShops.map((shop) => (
+              <div className="record-card" key={shop.shopId}>
+                <div className="record-card-main">
+                  <span className="record-card-title">{shop.shopName}</span>
+                  {shop.shopAddress && <span className="cell-sub">{shop.shopAddress}</span>}
+                </div>
+                <div className="row-actions">
+                  <button className="btn btn-primary btn-small btn-inline" disabled={Boolean(busy)} onClick={() => run(shop, 'accepted')}>
+                    {t('supply.accept')}
+                  </button>
+                  <button className="btn btn-secondary btn-small btn-inline" disabled={Boolean(busy)} onClick={() => run(shop, 'blocked')}>
+                    {t('supply.block')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>{t('supply.inviteTitle')}</h2>
+            <p className="field-hint">{t('supply.inviteBody')}</p>
+          </div>
+          {!invite && (
+            <div className="panel-tools">
+              <button className="btn btn-secondary btn-small btn-inline" disabled={Boolean(busy)} onClick={makeInvite}>
+                {busy === 'invite' ? t('common.saving') : t('supply.inviteMake')}
+              </button>
+            </div>
+          )}
+        </div>
+        {invite && (
+          <div className="field">
+            <div className="input-action">
+              <input className="input" readOnly value={invite.url} onFocus={(e) => e.target.select()} aria-label={t('supply.inviteTitle')} />
+              <button className="btn btn-secondary btn-small btn-inline" onClick={copyInvite}>
+                {t('supply.inviteCopy')}
+              </button>
+              <a
+                className="btn btn-primary btn-small btn-inline"
+                href={`https://wa.me/?text=${encodeURIComponent(invite.message)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t('supply.inviteWhatsapp')}
+              </a>
+            </div>
+            <span className="field-hint">{t('supply.inviteExpires')}</span>
+          </div>
+        )}
+        {/* The way to take back a link that went somewhere it should not have. */}
+        <button type="button" className="link-btn" disabled={Boolean(busy)} onClick={resetInvites}>
+          {t('supply.inviteReset')}
+        </button>
+      </div>
+
+      {blockedShops.length > 0 && (
+        <details className="panel">
+          <summary className="field-label">
+            {t('supply.blockedShopsTitle')} ({blockedShops.length})
+          </summary>
+          <div className="record-cards">
+            {blockedShops.map((shop) => (
+              <div className="record-card" key={shop.shopId}>
+                <div className="record-card-main">
+                  <span className="record-card-title">{shop.shopName}</span>
+                  {shop.shopAddress && <span className="cell-sub">{shop.shopAddress}</span>}
+                </div>
+                <button className="btn btn-secondary btn-small btn-inline" disabled={Boolean(busy)} onClick={() => run(shop, 'clear')}>
+                  {t('supply.unblock')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </>
   );
 }

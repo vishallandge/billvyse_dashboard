@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiFetch, API_URL } from '../../../lib/api';
+import { apiErrorMessage } from '../../../lib/apiErrors';
 import { formatRupees, formatDate } from '../../../lib/format';
 import { useLanguage } from '../../components/LanguageProvider';
 import AddressField from '../../components/AddressField';
@@ -267,8 +268,11 @@ export default function SuppliersPage() {
       if (err.code === 'DUPLICATE_SUPPLIER_PHONE' && err.data?.duplicate) {
         setPhoneDuplicate(err.data.duplicate);
       } else {
-        setError(err.message);
-        if (err.data?.field) setFieldErrors({ [err.data.field]: err.message });
+        // In the shopkeeper's language when the server named the refusal (the own-number one
+        // included); the server's English otherwise.
+        const text = apiErrorMessage(lang, err);
+        setError(text);
+        if (err.data?.field) setFieldErrors({ [err.data.field]: text });
       }
     } finally {
       setSubmitting(false);

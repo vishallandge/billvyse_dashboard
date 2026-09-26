@@ -12,7 +12,10 @@ import InvoiceDocument from '../../../components/InvoiceDocument';
 import { SkeletonCards } from '../../../components/Skeleton';
 import Link from 'next/link';
 import Dropdown from '../../../components/Dropdown';
-import { SettingsIcon, LockIcon, ChevronRightIcon, PrinterIcon, WhatsappIcon } from '../../../components/Icons';
+import { SettingsIcon, LockIcon, ChevronRightIcon, PrinterIcon, WhatsappIcon, CopyIcon, LinkIcon, RefreshIcon } from '../../../components/Icons';
+import RowMenu from '../../../components/RowMenu';
+import { useConfirm } from '../../../components/ConfirmDialog';
+import { useToast } from '../../../components/Toast';
 import WhatsappSheet from '../../../components/WhatsappSheet';
 import {
   INVOICE_TEMPLATES,
@@ -122,6 +125,8 @@ export default function InvoicePage() {
    * become the shop's. Null context (never in practice) keeps the old behaviour.
    */
   const dashboardUser = useDashboardUser();
+  const confirm = useConfirm();
+  const toast = useToast();
   const canSaveDefault = dashboardUser?.role !== 'staff';
   const id = useRouteId();
   /**
@@ -313,6 +318,67 @@ export default function InvoicePage() {
     const margin = PRINT_MARGINS.find((option) => option.id === prefs.margin) || PRINT_MARGINS[0];
     return `@page { size: ${paper.page}; margin: ${margin.mm}mm; }`;
   }, [prefs.paper, prefs.margin]);
+
+  /**
+   * The customer's own no-login link to this bill (backend/utils/billShareLink.js).
+   *
+   * Copy, open, and replace. Replacing is the fix for a bill sent to the wrong number: the
+   * shop cannot un-send a message, but the link inside it stops opening. Bills only — a
+   * quotation or a debit note has no customer copy of this kind.
+   */
+  async function copyText(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function handleCopyBillLink() {
+    try {
+      const { url } = await apiFetch(`/api/seller/bills/${id}/link`);
+      if (await copyText(url)) toast.success(t('seller.billLinkCopied'));
+      else toast.error(t('seller.billLinkCopyFailed'));
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
+  async function handleOpenBillLink() {
+    // Opened before the fetch resolves would be blocked as a popup, so the tab is claimed
+    // first and pointed at the link once it arrives.
+    const tab = window.open('', '_blank');
+    try {
+      const { url } = await apiFetch(`/api/seller/bills/${id}/link`);
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      tab?.close();
+      toast.error(err.message);
+    }
+  }
+
+  async function handleRotateBillLink() {
+    const ok = await confirm({
+      tone: 'warning',
+      title: t('seller.newBillLinkConfirmTitle'),
+      body: t('seller.newBillLinkConfirmBody'),
+      confirmLabel: t('seller.newBillLink'),
+    });
+    if (!ok) return;
+    try {
+      const { url } = await apiFetch(`/api/seller/bills/${id}/link/rotate`, { method: 'POST' });
+      await copyText(url);
+      toast.success(t('seller.newBillLinkDone'));
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
 
   async function handleShare() {
     try {
@@ -550,6 +616,16 @@ export default function InvoicePage() {
             >
               {savedDefault ? t('seller.invoiceDefaultSaved') : t(isEstimate ? 'seller.quoteSaveLayout' : 'seller.invoiceSaveDefault')}
             </button>
+          )}
+          {!isEstimate && !isDebitNote && invoice && (
+            <RowMenu
+              tip={t('seller.billLinkTitle')}
+              items={[
+                { label: t('seller.copyBillLink'), icon: <CopyIcon size={15} />, onClick: handleCopyBillLink },
+                { label: t('seller.openBillLink'), icon: <LinkIcon size={15} />, onClick: handleOpenBillLink },
+                { label: t('seller.newBillLink'), icon: <RefreshIcon size={15} />, onClick: handleRotateBillLink },
+              ]}
+            />
           )}
           <button type="button" className="btn btn-primary btn-small" onClick={() => window.print()} disabled={!invoice}>
             <PrinterIcon size={15} /> {t('seller.invoicePrintOrPdf')}

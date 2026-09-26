@@ -129,16 +129,71 @@ const PLAN_FEATURES_NO_BRANCHES = {
   },
 };
 
-// Mirrors backend/config/modules.js features whose `planFeature` is null — these are
-// available on every tier (Free included), gated only by an admin module switch which
-// defaults on. This grid exists because the app under-shows what it can already do.
+/**
+ * Mirrors backend/config/modules.js features whose `planFeature` is null — these are
+ * available on every tier (Free included), gated only by an admin module switch which
+ * defaults on. This grid exists because the app under-shows what it can already do.
+ *
+ * `module` names that switch, and it used to be missing entirely: the grid was a static
+ * list that went on advertising a screen after the operator had switched it off for the
+ * whole platform. On THIS page that is worse than anywhere else in the app — this is the
+ * page a shopkeeper reads while deciding whether to pay, so a tile here is a promise about
+ * what the money buys. Nothing switched off may appear on it.
+ *
+ * A tile may name several (`['appointments', 'tables']`): it goes when every one of them is
+ * off, because the sentence it prints is still true while any of them is on.
+ */
 const FEATURE_CATEGORIES = [
+  /**
+   * First, and first for a reason.
+   *
+   * Every other tile on this page describes something a shopkeeper could also do with a
+   * paper book, only faster — bills, stock, khata, purchase orders. These two are the only
+   * ones that do something the book cannot do at all: read the shop's own numbers back to
+   * him and put a rupee figure on what he is losing. They are the answer to "why pay for
+   * this at all", and they were missing from the page where that question gets asked.
+   *
+   * Both carry a ₹ in the description on purpose. "12 items are stuck" is a count and a
+   * count persuades nobody; "₹4,200 stuck in 12 items" is the same fact with the reason to
+   * act attached.
+   */
+  {
+    icon: SparkleIcon,
+    title: {
+      en: 'What a paper book cannot do',
+      hi: 'जो बही-खाता नहीं कर सकता',
+      mr: 'जे वही-खातं करू शकत नाही',
+    },
+    items: [
+      {
+        icon: ZapIcon,
+        module: 'advice',
+        title: { en: 'Do This Today', hi: 'आज ये करें', mr: 'आज हे करा' },
+        desc: {
+          en: 'Every morning your dukaan tells you what needs doing — stock about to expire, udhaar falling due, goods still selling below cost. Each one with the rupees at stake.',
+          hi: 'हर सुबह दुकान खुद बताती है क्या करना है — एक्सपायरी के करीब माल, आने वाला उधार, लागत से नीचे बिकता सामान। हर एक पर कितने रुपये लगे हैं, वो भी।',
+          mr: 'दररोज सकाळी दुकान स्वतः सांगतं काय करायचं — एक्सपायरीच्या जवळचा माल, येणारं उधार, खर्चापेक्षा स्वस्त विकला जाणारा माल. प्रत्येकावर किती रुपये अडकलेत, तेसुद्धा.',
+        },
+      },
+      {
+        icon: RupeeIcon,
+        module: 'savings',
+        title: { en: 'Money to Save', hi: 'बचने वाला पैसा', mr: 'वाचणारा पैसा' },
+        desc: {
+          en: 'Dead stock, money sitting on the shelf, goods about to expire and prices below cost — each with a rupee figure, so you can see what the shop is losing and where.',
+          hi: 'डेड स्टॉक, शेल्फ पर अटका पैसा, एक्सपायरी के करीब माल और लागत से कम दाम — हर एक पर रुपया लिखा हुआ, ताकि दिखे कि नुकसान कहां हो रहा है।',
+          mr: 'डेड स्टॉक, शेल्फवर अडकलेला पैसा, एक्सपायरीच्या जवळचा माल आणि खर्चापेक्षा कमी किंमत — प्रत्येकासमोर रुपया, म्हणजे नुकसान नेमकं कुठे होतंय ते दिसतं.',
+        },
+      },
+    ],
+  },
   {
     icon: ZapIcon,
     title: { en: 'Run your counter', hi: 'अपना काउंटर चलाएं', mr: 'तुमचा काउंटर चालवा' },
     items: [
       {
         icon: CounterIcon,
+        module: 'billing',
         title: { en: 'Billing & POS', hi: 'बिलिंग और पीओएस', mr: 'बिलिंग आणि पीओएस' },
         desc: {
           en: 'Fast checkout with barcode scan, split payment and instant receipts.',
@@ -148,6 +203,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: BoxIcon,
+        module: 'inventory',
         title: { en: 'Inventory & stock', hi: 'इन्वेंटरी और स्टॉक', mr: 'इन्व्हेंटरी आणि स्टॉक' },
         desc: {
           en: 'Track stock and expiry dates, get low-stock alerts automatically.',
@@ -163,6 +219,7 @@ const FEATURE_CATEGORIES = [
     items: [
       {
         icon: StoreIcon,
+        module: 'catalog',
         title: { en: 'Public catalog', hi: 'पब्लिक कैटलॉग', mr: 'पब्लिक कॅटलॉग' },
         desc: {
           en: 'Share your price list on WhatsApp — customers browse with no app download.',
@@ -172,6 +229,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: StarIcon,
+        module: 'loyalty',
         title: { en: 'Loyalty & coupons', hi: 'लॉयल्टी और कूपन', mr: 'लॉयल्टी आणि कूपन' },
         desc: {
           en: 'Points and discount coupons that bring customers back for more.',
@@ -181,6 +239,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: CalendarIcon,
+        module: ['appointments', 'tables'],
         title: { en: 'Appointments, jobs & memberships', hi: 'अपॉइंटमेंट, जॉब्स और मेंबरशिप', mr: 'अपॉइंटमेंट, जॉब्स आणि मेंबरशिप' },
         desc: {
           en: "Salon, tailor, gym or tuition — slot booking, a work-order board and membership validity.",
@@ -196,6 +255,7 @@ const FEATURE_CATEGORIES = [
     items: [
       {
         icon: TruckIcon,
+        module: 'suppliers',
         title: { en: 'Supplier directory', hi: 'सप्लायर डायरेक्टरी', mr: 'सप्लायर डिरेक्टरी' },
         desc: {
           en: "Every supplier's contact, ledger and reorder history in one place.",
@@ -205,6 +265,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: ClipboardIcon,
+        module: 'purchaseOrders',
         title: { en: 'Purchase orders', hi: 'पर्चेज़ ऑर्डर', mr: 'पर्चेस ऑर्डर' },
         desc: {
           en: 'Raise POs, receive stock and track supplier payments end to end.',
@@ -220,6 +281,7 @@ const FEATURE_CATEGORIES = [
     items: [
       {
         icon: TagIcon,
+        module: 'labels',
         title: { en: 'Price labels', hi: 'प्राइस लेबल', mr: 'किंमत लेबल' },
         desc: {
           en: 'Print MRP and barcode stickers straight from your inventory.',
@@ -229,6 +291,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: WalletIcon,
+        module: 'expenses',
         title: { en: 'Kharcha tracking', hi: 'खर्चा ट्रैकिंग', mr: 'खर्च ट्रॅकिंग' },
         desc: {
           en: 'Log daily expenses and see exactly where the money goes.',
@@ -238,6 +301,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: BookIcon,
+        module: 'daybook',
         title: { en: 'Day book', hi: 'डे बुक', mr: 'डे बुक' },
         desc: {
           en: 'Reconcile cash at closing time — every rupee accounted for.',
@@ -247,6 +311,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: DownloadIcon,
+        module: 'backup',
         title: { en: 'Backup & restore', hi: 'बैकअप और रिस्टोर', mr: 'बॅकअप आणि रिस्टोर' },
         desc: {
           en: "One-tap export of your entire dukaan's data, any time you need it.",
@@ -262,6 +327,7 @@ const FEATURE_CATEGORIES = [
     items: [
       {
         icon: RupeeIcon,
+        module: 'upiQr',
         title: { en: 'UPI QR on every bill', hi: 'हर बिल पर UPI QR', mr: 'प्रत्येक बिलावर UPI QR' },
         desc: {
           en: 'Scan-to-pay QR on bills and khata reminders — get paid faster.',
@@ -271,6 +337,7 @@ const FEATURE_CATEGORIES = [
       },
       {
         icon: BellIcon,
+        module: 'notifications',
         title: { en: 'Smart notifications', hi: 'स्मार्ट नोटिफिकेशन', mr: 'स्मार्ट नोटिफिकेशन' },
         desc: {
           en: 'Low stock, expiry and khata-due alerts, automatically, before they cost you.',
@@ -365,6 +432,19 @@ const COUNTS = [
   // since the row sits in the same "how many you can have" group as the ones above.
   { limitKey: 'maxCatalogueOrders', labelKey: 'seller.planCompareCatalogueOrders' },
   { limitKey: 'maxAppointments', labelKey: 'seller.planCompareAppointments' },
+  /**
+   * How many kinds of advice this tier reaches.
+   *
+   * The one row on this table that is not a cap but a capability, and it earns its place
+   * precisely because the tiers really do differ: the registry puts a plan floor on each
+   * rule, so Free reaches roughly half of them. Until now "Do This Today" appeared nowhere
+   * on this table at all, which sold the app's most distinctive screen as though every plan
+   * got an identical version of it.
+   *
+   * The server counts it live (utils/advisoryAccess.js), so moving one rule's floor in
+   * Admin → Salah moves this number too, and switching the feed off removes the row.
+   */
+  { limitKey: 'adviceRules', labelKey: 'seller.planCompareAdvice' },
 ];
 
 /**
@@ -674,6 +754,9 @@ export default function SellerPlanPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [data, setData] = useState(null);
+  // Admin → Modules, as this shop resolves them. null until the call lands (or if it
+  // fails), and null means "hide nothing" — see featureCategories below.
+  const [moduleStates, setModuleStates] = useState(null);
   const [payments, setPayments] = useState(null);
   // What the app has already recovered for this shop. Owner-only on the server, and drawn
   // only when there is something real in it.
@@ -727,6 +810,17 @@ export default function SellerPlanPage() {
   }, []);
 
   function load() {
+    /**
+     * The module states, for the feature grid below — see FEATURE_CATEGORIES.
+     *
+     * Allowed to fail silently: a grid that shows one tile too many is a much smaller
+     * problem than a plan page that will not render because a secondary call timed out.
+     * On failure nothing is hidden, which is exactly how this page behaved before.
+     */
+    apiFetch('/api/seller/modules')
+      .then((payload) => setModuleStates(payload?.modules || null))
+      .catch(() => {});
+
     apiFetch('/api/seller/plan')
       .then(setData)
       .catch((err) => setError(err.message));
@@ -843,9 +937,49 @@ export default function SellerPlanPage() {
    * a thing nobody can have is not a difference between tiers, so it leaves the table
    * instead of standing there advertising a number that means nothing.
    */
+  /**
+   * The categories and tiles this shop may actually be shown.
+   *
+   * Only `off_platform` hides a tile. A feature the shop's own PLAN does not include must
+   * stay — that is the thing being sold on this page, and hiding it would leave a shopkeeper
+   * paying for a tier whose reason to exist he was never shown. A screen the owner himself
+   * switched off in Settings → Screens stays too: it is his to switch back on.
+   *
+   * A whole category disappears when every tile in it has gone, rather than leaving a
+   * heading standing over nothing.
+   */
+  const featureCategories = useMemo(() => {
+    if (!moduleStates) return FEATURE_CATEGORIES;
+    const offPlatform = (key) => moduleStates[key]?.state === 'off_platform';
+    return FEATURE_CATEGORIES
+      .map((cat) => ({
+        ...cat,
+        items: cat.items.filter((item) => {
+          if (!item.module) return true;
+          const keys = Array.isArray(item.module) ? item.module : [item.module];
+          return !keys.every(offPlatform);
+        }),
+      }))
+      .filter((cat) => cat.items.length > 0);
+  }, [moduleStates]);
+
   const countRows = useMemo(() => {
     if (!catalog) return [];
     return COUNTS.filter((row) => PLAN_ORDER.some((id) => catalog[id]?.[row.limitKey] !== undefined));
+  }, [catalog]);
+
+  /**
+   * The monthly meters, dropped on the same rule — and this one was actively lying.
+   *
+   * An absent limit means "unlimited" everywhere else on this table, and the server removes
+   * a limit outright when the channel behind it is switched off platform-wide. So with SMS
+   * switched off in Admin → Modules, `catalog[plan].smsPerMonth` came back undefined and
+   * every tier in this row rendered as “Unlimited” — the app promising infinite SMS at the
+   * exact moment it had stopped being able to send one.
+   */
+  const meterCompareRows = useMemo(() => {
+    if (!catalog) return [];
+    return METERS.filter((row) => PLAN_ORDER.some((id) => catalog[id]?.[row.limitKey] !== undefined));
   }, [catalog]);
 
   // The shopkeeper-facing name of every feature key this screen knows about, taken from the
@@ -1624,7 +1758,7 @@ export default function SellerPlanPage() {
           </div>
 
           <div className="plan-feature-categories">
-            {FEATURE_CATEGORIES.map((cat) => {
+            {featureCategories.map((cat) => {
               const CatIcon = cat.icon;
               return (
                 <div key={pick('en', cat.title)} data-reveal>
@@ -1689,7 +1823,7 @@ export default function SellerPlanPage() {
                     <ClockIcon size={14} /> {t('seller.planCompareLimitsGroup')}
                   </td>
                 </tr>
-                {METERS.map((meter) => (
+                {meterCompareRows.map((meter) => (
                   <tr key={meter.limitKey}>
                     <td>{t(meter.labelKey)}</td>
                     {PLAN_ORDER.map((planId) => {
@@ -1965,8 +2099,6 @@ function PlanCard({
   return (
     <div className={classes} id={`plan-${id}`}>
       {celebrating && <span className="moment-burst" aria-hidden="true" />}
-
-      <span className="plan-card-sheen" aria-hidden="true" />
 
       {targeted && !isCurrent && (
         <span className="plan-card-target">

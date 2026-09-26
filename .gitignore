@@ -32,3 +32,15 @@ logs/
 npm-debug.log*
 
 .DS_Store
+
+# Headless-Chrome ke jaanch folder: screenshot aur layout check ke waqt bante hain.
+# Ye Chrome ke poore profile hain (cache, GPU data) — repo mein inka kaam nahi.
+.hydration-browser/
+.offline-layout-check/
+
+# Ek-baar ke jaanch script aur unke output folder — screenshot/layout check ke waqt
+# bante hain, har baar naye. Repo mein inka kaam nahi.
+/.bill-*.cjs
+/.bill-*/
+/.import-*.cjs
+/.import-*/

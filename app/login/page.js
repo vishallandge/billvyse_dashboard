@@ -67,7 +67,16 @@ function LoginForm() {
       // picks their Google account once.
       if (data.needsSignup) {
         try {
-          sessionStorage.setItem('dukaan_google_signup', JSON.stringify({ credential, profile: data.profile }));
+          /**
+           * The PROFILE only — a name, an email and a picture url, which is what the wizard
+           * prefills with and none of which proves anything.
+           *
+           * The Google token itself used to travel here too, and that was the problem: any
+           * script on the page could read it out of sessionStorage and sign up as that
+           * person. The server now parks it in an httpOnly cookie of its own and reads it
+           * back when the wizard posts, so the browser never holds it across the hop.
+           */
+          sessionStorage.setItem('dukaan_google_signup', JSON.stringify({ profile: data.profile }));
         } catch {
           // Private-mode browsers block sessionStorage; signup just starts empty.
         }

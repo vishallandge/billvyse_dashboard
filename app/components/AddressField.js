@@ -13,6 +13,7 @@ import {
   cleanPincode,
   addressProblem,
   addressPartProblem,
+  addressCrossFieldProblem,
   addressErrorText,
   lookupPincode,
   locateAddress,
@@ -267,8 +268,38 @@ export default function AddressField({
      */
     const pinCode = addressPartProblem('pincode', parts.pincode);
     if (pinCode) return { field: 'pincode', code: pinCode };
+
+    /**
+     * What India Post said about those six digits.
+     *
+     * The regex only knows the SHAPE of a pincode. "999999" is six digits that do not start
+     * with a zero and there is no such post office — the lookup already knew that and turned
+     * the box red, but the verdict never reached `problem`, so the parent's Save went
+     * through on a PIN code the form was visibly complaining about.
+     *
+     * `checking` blocks too: a Save pressed 200ms after the sixth digit would otherwise
+     * commit before the answer arrives, which is the one moment this check cannot help.
+     *
+     * `unreachable` deliberately does NOT block. That is our lookup being down, not the
+     * shopkeeper's pincode being wrong, and refusing to save somebody's own address because
+     * a third-party API is having a bad morning is the wrong way round.
+     */
+    if (pinState === 'invalid') return { field: 'pincode', code: 'ADDRESS_PIN_UNKNOWN' };
+    if (pinState === 'checking') return { field: 'pincode', code: 'ADDRESS_PIN_CHECKING' };
+
+    /**
+     * The boxes the pincode obliges — run on the PARTS, not on the composed line.
+     *
+     * With `omitPlace` the city, state and pincode are held in the caller's own columns and
+     * never reach the line, so the shared rule inside addressProblem cannot see them. This
+     * is the same function (lib/addressRules.js), asked the same question, from the shape
+     * that always has every box.
+     */
+    const cross = addressCrossFieldProblem(parts);
+    if (cross) return cross;
+
     return addressProblem(composeAddress(parts, { omitPlace }), { required, maxLength });
-  }, [parts, omitPlace, required, maxLength]);
+  }, [parts, omitPlace, required, maxLength, pinState]);
 
   /**
    * A half-typed pincode is not an error yet.

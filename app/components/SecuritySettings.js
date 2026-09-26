@@ -1,15 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
+import { clearLocalSessionState } from '../../lib/session';
 import { apiErrorMessage } from '../../lib/apiErrors';
 import { useLanguage } from './LanguageProvider';
 import { useConfirm } from './ConfirmDialog';
 import GoogleSignInButton from './GoogleSignInButton';
 import { passwordStrength, PASSWORD_MIN } from '../../lib/passwordRules';
 import Modal from './Modal';
-import { formatDate } from '../../lib/format';
+import { formatDate, formatRelativeTime } from '../../lib/format';
 import { CheckCircleIcon, AlertIcon, EyeIcon, EyeOffIcon, LockIcon, SpinnerIcon, TrashIcon } from './Icons';
 
 /**
@@ -36,6 +38,7 @@ import { CheckCircleIcon, AlertIcon, EyeIcon, EyeOffIcon, LockIcon, SpinnerIcon,
 export default function SecuritySettings() {
   const { t, lang } = useLanguage();
   const confirm = useConfirm();
+  const router = useRouter();
 
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +55,39 @@ export default function SecuritySettings() {
   const [delName, setDelName] = useState('');
   const [delReason, setDelReason] = useState('');
   const [delPassword, setDelPassword] = useState('');
+  /**
+   * Whether the confirm-name box has been touched yet — the guard against Chrome's autofill.
+   *
+   * The box sits directly above a password field, and that is all Chrome needs to decide the
+   * pair is a login form: it fills the text one with the saved email address and the password
+   * one with the saved password. `autocomplete="off"` does not stop it; Chrome deliberately
+   * ignores that hint on fields it has decided are credentials.
+   *
+   * What it does honour is `readOnly`, which it will not write into. So the box starts read
+   * only and arms itself the moment the owner focuses it — focus fires before any keystroke,
+   * so nothing is lost and nobody notices. What this prevents is a dialog that opens with
+   * somebody's email address already sitting in the "type your shop name" box, under a hint
+   * that says to type a shop name, and a Schedule deletion button that then refuses.
+   */
+  const [delNameArmed, setDelNameArmed] = useState(false);
+
+  /**
+   * The signed-in devices, in their own request and their own state.
+   *
+   * Not folded into /api/auth/security: that call answers "what is this account" and is
+   * awaited before the panel draws anything at all. A device list is a slower, longer answer
+   * and a failure to fetch it must not blank out the password form above it.
+   */
+  const [sessions, setSessions] = useState([]);
+  // True while this browser's own login predates device tracking: it has no row, and neither
+  // do any other sessions opened before the update. The list is honest about that rather
+  // than letting an empty list read as "nobody else is signed in".
+  const [legacySession, setLegacySession] = useState(false);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [devicesError, setDevicesError] = useState(null);
+  // The row whose button is spinning. An id rather than a boolean, so pressing Logout on one
+  // device does not grey out the buttons on the other five.
+  const [revoking, setRevoking] = useState(null);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -60,6 +96,23 @@ export default function SecuritySettings() {
   // "Has he typed anything yet." A red "too short" under an empty box is the app telling
   // somebody off for a password they have not written; the verdict waits for a keystroke.
   const [touched, setTouched] = useState(false);
+
+  const loadDevices = useCallback(() => {
+    setDevicesError(null);
+    return apiFetch('/api/auth/sessions')
+      .then((data) => {
+        setSessions(Array.isArray(data.sessions) ? data.sessions : []);
+        setLegacySession(Boolean(data.legacySession));
+      })
+      .catch((error) => setDevicesError(apiErrorMessage(lang, error)))
+      .finally(() => setDevicesLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    loadDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     apiFetch('/api/auth/security')
@@ -140,11 +193,56 @@ export default function SecuritySettings() {
       await apiFetch('/api/auth/sign-out-everywhere', { method: 'POST' });
       const data = await apiFetch('/api/auth/security').catch(() => null);
       if (data) setInfo(data.security);
+      // Every row but this browser's has just stopped existing. Leaving the old list on
+      // screen would show the owner the devices he was told had been signed out.
+      await loadDevices();
       setMessage({ tone: 'ok', text: t('seller.secSignOutAllDone') });
     } catch (error) {
       setMessage({ tone: 'error', text: apiErrorMessage(lang, error) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Ends one device.
+   *
+   * The confirm names the device, because "Sign out?" on a list of five identical-looking
+   * rows is the app asking the owner to trust that he pressed the right one.
+   *
+   * Signing out the row he is sitting on is allowed rather than blocked — an owner on a
+   * borrowed phone works down the list and ends with the one in his hand, and a button that
+   * refuses at that point leaves the job half done. The server drops the cookies and says
+   * so, and the answer to that is the login screen, not a redraw.
+   */
+  async function handleRevokeDevice(session) {
+    const ok = await confirm({
+      tone: 'warning',
+      title: t('seller.secDeviceSignOutTitle'),
+      body: session.current
+        ? t('seller.secDeviceSignOutThisBody')
+        : t('seller.secDeviceSignOutBody', { device: session.device }),
+      confirmLabel: t('seller.secDeviceSignOut'),
+    });
+    if (!ok) return;
+
+    setRevoking(session.id);
+    setMessage(null);
+    try {
+      const data = await apiFetch(`/api/auth/sessions/${session.id}`, { method: 'DELETE' });
+      if (data?.signedOutSelf) {
+        clearLocalSessionState();
+        router.replace('/login');
+        return;
+      }
+      // Re-read rather than splicing the row out by hand: the server decides what is still a
+      // session, and a list that edits itself will eventually disagree with it.
+      await loadDevices();
+      setMessage({ tone: 'ok', text: t('seller.secDeviceSignedOut') });
+    } catch (error) {
+      setMessage({ tone: 'error', text: apiErrorMessage(lang, error) });
+    } finally {
+      setRevoking(null);
     }
   }
 
@@ -196,6 +294,9 @@ export default function SecuritySettings() {
     setDelReason('');
     setDelPassword('');
     setDelError(null);
+    // Re-armed with the rest of the form: the next time this dialog opens it must be as
+    // proof against autofill as it was the first time.
+    setDelNameArmed(false);
   }
 
   async function handleCancelDeletion() {
@@ -428,6 +529,75 @@ export default function SecuritySettings() {
         <p className="field-hint">{t('seller.secSignedOutAt', { when: when(info.signedOutEverywhereAt) })}</p>
       )}
 
+      {/*
+        ── Where this account is signed in ───────────────────
+        The button above this one ends every session at once, which is the right answer to
+        "my password leaked" and the wrong answer to the thing that actually happens: the
+        counter PC is still logged in, or the boy who worked the till last month still has
+        the dukaan open on his phone. Ending those used to cost the owner his own login and
+        everybody else's. Now each row has its own Logout.
+
+        Drawn even while it is loading and even when something failed, because a blank space
+        where the device list should be reads as "no other devices" — which is the single
+        most dangerous thing this panel could imply by accident.
+      */}
+      <div className="security-devices">
+        <h3>{t('seller.secDevicesTitle')}</h3>
+        <p className="security-danger-note">{t('seller.secDevicesHint')}</p>
+
+        {devicesLoading ? (
+          <p className="field-hint">{t('common.loading')}</p>
+        ) : devicesError ? (
+          <p className="field-hint">{devicesError}</p>
+        ) : sessions.length === 0 && !legacySession ? (
+          <p className="field-hint">{t('seller.secDevicesNone')}</p>
+        ) : (
+          <ul className="device-list">
+            {sessions.map((session) => (
+              <li key={session.id} className="device-row">
+                <div className="device-row-main">
+                  <span className="device-name">
+                    {session.device}
+                    {session.current && (
+                      <span className="security-pill is-ok">{t('seller.secDeviceThis')}</span>
+                    )}
+                    {session.support && (
+                      <span className="security-pill is-warn">{t('seller.secDeviceSupport')}</span>
+                    )}
+                  </span>
+                  {/* Last used first, because that is the line an owner scans for. The IP and
+                      the sign-in date are the corroborating detail behind it, and they sit in
+                      the quieter row for the same reason. */}
+                  <span className="device-meta">
+                    {t('seller.secDeviceLastUsed', { when: formatRelativeTime(session.lastSeenAt, lang) })}
+                    {session.ip ? ` · ${session.ip}` : ''}
+                    {session.signedInAt
+                      ? ` · ${t('seller.secDeviceSignedIn', { when: formatDate(session.signedInAt, lang) })}`
+                      : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={() => handleRevokeDevice(session)}
+                  disabled={revoking === session.id}
+                >
+                  {revoking === session.id ? <SpinnerIcon size={15} aria-hidden="true" /> : null}
+                  {t('seller.secDeviceSignOut')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Only during the changeover, and only for a browser whose login predates it. It
+            names the control that does reach those older sessions instead of leaving the
+            owner to work out why a device he knows is signed in is not on the list. */}
+        {!devicesLoading && !devicesError && legacySession && (
+          <p className="field-hint">{t('seller.secDevicesLegacy')}</p>
+        )}
+      </div>
+
       <p className="field-hint">
         {t('seller.secForgotHint')}{' '}
         <Link href="/forgot-password">{t('seller.forgotPassword')}</Link>
@@ -554,6 +724,14 @@ export default function SecuritySettings() {
               id="delName"
               type="text"
               autoComplete="off"
+              // Read only until focused — see `delNameArmed`. Chrome ignores autoComplete="off"
+              // on a field it reads as a username; it does not write into a read-only one.
+              readOnly={!delNameArmed}
+              onFocus={() => setDelNameArmed(true)}
+              // The two third-party managers that ignore the same hint Chrome does.
+              data-lpignore="true"
+              data-1p-ignore=""
+              spellCheck={false}
               value={delName}
               onChange={(event) => setDelName(event.target.value)}
             />

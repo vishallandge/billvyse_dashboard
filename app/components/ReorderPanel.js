@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useLanguage } from './LanguageProvider';
-import { formatRupees } from '../../lib/format';
+import { formatRupees, formatQty } from '../../lib/format';
 import Dropdown from './Dropdown';
 import RowMenu from './RowMenu';
 import {
@@ -700,7 +700,7 @@ function ReorderRow({ suggestion, picked, onToggle, onQty, onStep, onSnooze, onO
         <span className={`reorder-pill is-${s.urgency}${s.product.stock <= 0 && !pending ? ' moment-alert' : ''}`}>
           {s.product.stock <= 0
             ? t('purchase.reorderOutOfStock')
-            : t('purchase.stockLeft', { qty: s.product.stock, unit: s.product.unit })}
+            : t('purchase.stockLeft', { qty: formatQty(s.product.stock, lang), unit: s.product.unit })}
         </span>
         {showSupplier && s.lastBuy?.supplierName && (
           <span className="cell-muted">

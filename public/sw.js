@@ -1,11 +1,11 @@
-const OFFLINE_CACHE = 'billvyse-offline-v2';
+const OFFLINE_CACHE = 'billvyse-offline-v4';
 const OFFLINE_PAGE = '/offline.html';
 const OFFLINE_LOGO = '/icon-192.png';
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(OFFLINE_CACHE);
-    await cache.addAll([OFFLINE_PAGE, OFFLINE_LOGO]);
+    await cache.addAll([OFFLINE_PAGE, OFFLINE_LOGO].map((url) => new Request(url, { cache: 'reload' })));
     await self.skipWaiting();
   })());
 });

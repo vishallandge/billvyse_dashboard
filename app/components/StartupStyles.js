@@ -1,7 +1,8 @@
 // Critical startup styles survive a delayed external stylesheet.
+// Static trusted CSS must remain raw text: HTML entities are not decoded inside style tags.
 // Zero specificity allows the full themed stylesheet to override these defaults.
 export default function StartupStyles() {
-  return <style>{`
+  return <style dangerouslySetInnerHTML={{ __html: `
     :where(body) { margin: 0; }
     :where(.boot-splash) { position: fixed; inset: 0; z-index: 60; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg, #101014); color: var(--text, #f0f2f8); font-family: var(--font-latin, 'Segoe UI'), sans-serif; transition: opacity .34s ease; }
     :where(html[data-theme='light'] .boot-splash) { background: var(--bg, #eef0f4); color: #182337; }
@@ -18,5 +19,5 @@ export default function StartupStyles() {
     @keyframes startup-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { :where(.splash-spinner) { animation: none; } :where(.boot-splash) { transition: none; } }
     :where(html[data-motion='off'] .splash-spinner) { animation: none; }
-  `}</style>;
+  ` }} />;
 }

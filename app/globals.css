@@ -36,10 +36,18 @@
   --brand-navy: #0f2a4d;
   --brand-navy-light: #1c3f6e;
   --gold: #fbbf24;
+  /* Bare channels for the same reason as --success-rgb above: the import card's "nothing
+     went in" mark is a wash of this colour, and rgba() cannot take a hex var. */
+  --gold-rgb: 251, 191, 36;
   /* Money green. Retuned off the emerald #34d399 to the logo's grass green (#2da232,
      sampled from the rising arrow) so a profit figure and the mark read as one brand.
      Hue moves ~118°, the lightness ramp does not — 8.2:1 on --bg. */
   --success: #3fbf45;
+  /* The same green as bare channels, so a wash can be written rgba(var(--success-rgb), .14)
+     the way --brand-rgb already allows. Added for the import card's completed ticks: a
+     tint of the money green needs alpha, and rgba() cannot take a hex var. Kept in step
+     with --success above by hand, the same way --brand-rgb is. */
+  --success-rgb: 63, 191, 69;
   --danger: #f87171;
 
   /* Surfaces */
@@ -195,7 +203,9 @@
      the mode. Declared explicitly anyway so both mode blocks list the full brand set. */
   --brand-ink: #0f2a4d;
   --gold: #b45309;
+  --gold-rgb: 180, 83, 9;
   --success: #17993a;
+  --success-rgb: 23, 153, 58;
   --danger: #dc2626;
 
   /* Page sits on a soft neutral gray; cards are pure white and lift off it. */
@@ -1657,6 +1667,562 @@ a.notif-detail-row:hover {
   margin: 0.3rem 0 0;
   color: var(--text-danger);
   font-size: var(--fs-sm);
+}
+
+/* ---------- Bulk import: the run, and what it came back with ----------
+   The progress card and the success card are ONE card that changes shape: same dialog,
+   same frame, the body swapped underneath. They used to be two states of a dialog that
+   closed itself in between, which is why a clean import ended with the shopkeeper staring
+   at the list wondering whether the 412 rows had actually landed.
+
+   All of it is opt-in through `.import-modal`, so the three numbered instruction steps
+   above keep the ordinary dialog shape and only the run wears this one. */
+
+/* The frame. `max-width` transitions because 560 (three instruction steps, a dropdown and
+   a caution) and 460 (a title, a bar and three lines) are genuinely different dialogs, and
+   snapping between them mid-import reads as the card being replaced rather than moving on. */
+.modal-card.import-modal {
+  transition: max-width 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A clean surface for the run. --surface-card is pure white in light mode and the lifted
+   near-black in dark, so "white card" stays true to whichever mode the shop is running
+   rather than being a hardcoded #fff that blinds a counter at 9pm. */
+.modal-card.import-modal--run {
+  background: var(--surface-card);
+  border-color: var(--card-border);
+  box-shadow: var(--card-shadow);
+}
+
+.imp {
+  padding: 0.15rem 0 0.1rem;
+}
+
+.imp-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.imp-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+}
+
+.imp-mark--file {
+  background: rgba(var(--brand-rgb), 0.11);
+  color: var(--brand-text);
+}
+
+/* The icon breathes rather than bounces: opacity only, no transform. A file glyph that
+   hops while a file is being read is a cartoon; one that dims and lifts is a status light.
+   2.6s because anything quicker starts to read as urgency, and this is a wait, not an alarm. */
+.imp--run .imp-mark--file > svg {
+  animation: imp-breathe 2.6s ease-in-out infinite;
+}
+
+@keyframes imp-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.imp-head-text { min-width: 0; }
+
+.imp-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* The file the shopkeeper actually picked, named and sized. It is the one real piece of
+   data we hold while the server is thinking, and it answers the question a progress bar
+   never can: is it working on the sheet I meant to send? Truncated rather than wrapped, so
+   a long name cannot push the card taller than the three steps it is introducing. */
+.imp-file {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.15rem 0 0;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.imp-file-name {
+  /* A flex item's default min-width is `auto`, which is a floor at the text's own width —
+     so without this a shopkeeper's "September 2026 full stock list FINAL(2).xlsx" refuses
+     to shrink and pushes the size chip out through the side of the card. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imp-file-size {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.imp-file-size::before {
+  content: '\00b7';
+  margin-right: 0.4rem;
+}
+
+.imp-note {
+  margin: 0.85rem 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+/* ---- The indeterminate bar ----
+   Indeterminate BECAUSE the import is one POST: the server counts rows internally and
+   answers once, at the end, so there is no real percentage to draw. A bar that crawled to
+   90% on a guess and stopped there would be the app lying about the one thing it has on
+   screen, and that is how a shopkeeper learns to distrust every other number in it. */
+.imp-bar {
+  position: relative;
+  height: 4px;
+  margin: 0.95rem 0 0;
+  border-radius: var(--radius-full);
+  background: rgba(var(--brand-rgb), 0.14);
+  overflow: hidden;
+}
+
+.imp-bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 34%;
+  border-radius: inherit;
+  background: var(--brand);
+  animation: imp-travel 1.5s cubic-bezier(0.5, 0.05, 0.3, 0.95) infinite;
+}
+
+@keyframes imp-travel {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ---- The three steps ----
+   Every state below is driven by something that really finished. See ImportProgress.js. */
+.imp-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 1.15rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.imp-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+
+.imp-step-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  /* Both halves of the change are transitioned, so a step becoming current or complete
+     moves into its new colour instead of cutting to it. */
+  transition: border-color 0.3s ease, background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Not started: a hollow ring, and the label steps back so the eye lands on the live row. */
+.imp-steps li.is-next { color: var(--text-faint); }
+
+/* In progress: one small dot, fading in place. It does not travel, grow or bounce. It is a
+   heartbeat saying this row is the one being worked on right now. */
+.imp-steps li.is-live {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.imp-steps li.is-live .imp-step-mark { border-color: var(--brand); }
+
+.imp-steps li.is-live .imp-step-mark::after {
+  content: '';
+  /* Absolute, not a flex child. The tick sits in this same box at opacity 0 waiting for
+     its turn, and as a second flex item it shunted the live dot off to the right edge of
+     the ring — a lopsided crescent where a centred dot should be. */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: imp-beat 1.6s ease-in-out infinite;
+}
+
+@keyframes imp-beat {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* Done: the ring fills with the money green and the tick DRAWS itself on, short stroke then
+   long. A checkmark that simply appears is a state change; one that is drawn is the app
+   showing its work. It runs once, when the class arrives, and never loops. */
+.imp-steps li.is-done { color: var(--text-muted); }
+
+.imp-steps li.is-done .imp-step-mark {
+  border-color: rgba(var(--success-rgb), 0.55);
+  background: rgba(var(--success-rgb), 0.14);
+  color: var(--text-success);
+}
+
+.imp-tick {
+  width: 11px;
+  height: 11px;
+  opacity: 0;
+}
+
+.imp-steps li.is-done .imp-tick { opacity: 1; }
+
+.imp-steps li.is-done .imp-tick path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: imp-draw 0.36s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+@keyframes imp-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.imp-keep {
+  margin: 1.1rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+/* ---- Finished ----
+   The same card, one state later. It fades UP by four pixels rather than sliding in from
+   anywhere: the card has not moved, only what it is saying. */
+.imp--done {
+  text-align: center;
+  padding: 0.4rem 0 0.2rem;
+  animation: imp-settle 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes imp-settle {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.imp-mark--done {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 0.75rem;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--success-rgb), 0.5);
+  background: rgba(var(--success-rgb), 0.13);
+  color: var(--text-success);
+}
+
+.imp-mark--done .imp-tick {
+  width: 20px;
+  height: 20px;
+  opacity: 1;
+}
+
+/* Nothing was imported. Amber, not red: the sheet was read and understood, every row in it
+   was simply refused — that is a sheet to fix, not a system that broke. And not green with
+   a tick, which is what this card used to draw over "0 products imported successfully". */
+.imp-mark--fail {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 0.75rem;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--gold-rgb), 0.5);
+  background: rgba(var(--gold-rgb), 0.13);
+  color: var(--text-warning);
+}
+
+/* The one sentence that says why, in the seller's own language, instead of two hundred
+   English rows all repeating it. */
+.imp-reason {
+  margin: 0.8rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--gold-rgb), 0.1);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* The warning weight of the reason block, for the one line that is not an explanation but
+   an instruction: your sheet may still be going in, do not send it again. Danger ink, not
+   amber — this is the only thing on any of these cards that can cost the shop a duplicated
+   catalog if it is skimmed past. */
+/* ---- The check-and-confirm step ----
+   Left-aligned, unlike the finished card: this one is read, not glanced at. A shopkeeper is
+   deciding whether to let a sheet overwrite prices and stock they sell off every day, and
+   centred text is for congratulating somebody, not for being read carefully. */
+.imp--review { padding: 0.15rem 0 0.1rem; }
+
+/* The two numbers the whole decision rests on, side by side so they are compared rather
+   than read one after the other. */
+.imp-tally {
+  display: flex;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.imp-tally li {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+.imp-tally-n {
+  color: var(--text);
+  font-size: var(--fs-lg);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What "update" would actually change, with worked examples under it. */
+.imp-diff { margin: 0.9rem 0 0; }
+
+.imp-diff-head {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+}
+
+/* The stock heading is set apart because stock is the half of this that cannot be undone:
+   a price typed back is a price, a stock count overwritten has taken the morning's sales
+   with it. It gets its own rule above it so the eye cannot slide from rates into counts
+   without noticing it crossed something. */
+.imp-diff-head--stock {
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-warning);
+}
+
+.imp-diff-rows {
+  margin: 0.45rem 0 0;
+  padding: 0;
+  max-height: 9rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.imp-diff-rows li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.28rem 0;
+}
+
+.imp-diff-rows li + li { border-top: 1px solid var(--border); }
+
+.imp-diff-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* Tabular so a column of "10 → 12" lines up and can be scanned down rather than read. */
+.imp-diff-move {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.imp-diff-move b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.imp-diff-warn {
+  margin: 0.55rem 0 0;
+  color: var(--text-warning);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.imp-note--bad { color: var(--text-danger); }
+
+/* Rows the sheet and the shop already agreed on — true, worth showing, and never the
+   headline. */
+.imp-stat--quiet .imp-stat-n {
+  color: var(--text-muted);
+  font-size: var(--fs-base);
+}
+
+.imp-reason--warn {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  font-weight: 600;
+}
+
+.imp-mark--done .imp-tick path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: imp-draw 0.42s cubic-bezier(0.65, 0, 0.35, 1) 0.12s forwards;
+}
+
+.imp--done .imp-title { font-size: var(--fs-lg); }
+
+.imp-stat {
+  margin: 0.6rem 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* The figure is what the seller opened this dialog to find out, so it is set as a figure:
+   tabular, heavier, in the app's ink, with the words around it staying muted. */
+.imp-stat-n {
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.imp-stat--warn .imp-stat-n { color: var(--text-warning); }
+
+/* A sentence rather than a figure and its label — the failed card's server message and its
+   "try again in N seconds". Same slot, ordinary ink, no big number to lead with. */
+.imp-stat--plain {
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* Where the shop has ended up, under what just happened to it. Quieter than both counts
+   above on purpose: it is context, not the result. */
+.imp-total {
+  margin: 0.85rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+/* Deliberately the quietest thing on a finished card. The rows a sheet refused matter, but
+   they matter to the one seller in ten whose sheet had a typo, and putting a second button
+   next to "View products" would make every clean import look like it needs attention. */
+.imp-details-toggle {
+  margin: 0.9rem 0 0;
+  padding: 0.2rem 0.3rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.imp-details-toggle:hover { color: var(--text); }
+
+.imp-details {
+  margin: 0.7rem 0 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* --surface-strong, not --surface: in light mode --surface IS white, so on this white
+     card the panel was a border around nothing. This one reads as inset either way. */
+  background: var(--surface-strong);
+  text-align: left;
+  animation: imp-settle 0.28s ease both;
+}
+
+.imp-details-note {
+  margin: 0;
+  color: var(--text-warning);
+  font-size: var(--fs-sm);
+}
+
+.imp-details-note + .import-result-rows { margin-top: 0.5rem; }
+
+.imp-details-more {
+  margin: 0.4rem 0 0;
+  color: var(--text-danger);
+  font-size: var(--fs-sm);
+}
+
+/* Movement is the only decorative part of this, so movement is the only part that goes.
+   The bar keeps its brand fill (still visibly the thing in progress), the live step keeps
+   its dot, and the ticks are simply drawn already. Nothing loops. */
+:root[data-motion='off'] .imp-bar > span,
+:root[data-motion='off'] .imp--run .imp-mark--file > svg,
+:root[data-motion='off'] .imp-steps li.is-live .imp-step-mark::after,
+:root[data-motion='off'] .imp--done,
+:root[data-motion='off'] .imp-details {
+  animation: none;
+}
+
+:root[data-motion='off'] .imp-bar > span { width: 100%; opacity: 0.55; }
+
+:root[data-motion='off'] .imp-steps li.is-done .imp-tick path,
+:root[data-motion='off'] .imp-mark--done .imp-tick path {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+
+:root[data-motion='off'] .modal-card.import-modal { transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) .imp-bar > span,
+  :root:not([data-motion='full']) .imp--run .imp-mark--file > svg,
+  :root:not([data-motion='full']) .imp-steps li.is-live .imp-step-mark::after,
+  :root:not([data-motion='full']) .imp--done,
+  :root:not([data-motion='full']) .imp-details {
+    animation: none;
+  }
+
+  :root:not([data-motion='full']) .imp-bar > span { width: 100%; opacity: 0.55; }
+
+  :root:not([data-motion='full']) .imp-steps li.is-done .imp-tick path,
+  :root:not([data-motion='full']) .imp-mark--done .imp-tick path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  :root:not([data-motion='full']) .modal-card.import-modal { transition: none; }
 }
 
 /* Re-auth box that appears under the UPI ID field when the server demands the account
@@ -9899,6 +10465,599 @@ label.switch {
   max-width: 340px;
 }
 
+/* "Koi order hi nahi aa raha" — answered on the screen where it is asked. Amber, not red:
+   the shop being shut is a setting the owner chose, not a fault, and the banner's job is to
+   remind rather than to alarm. */
+.orders-closed-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  color: var(--text-warning);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.orders-closed-banner svg {
+  flex: none;
+}
+
+.orders-closed-banner span {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* ---------- The order, opened ----------
+
+   What to pack, who to call, what to collect. Read standing up with a bag in one hand, so
+   it is a sheet over the list rather than a route, the numbers are large enough to read at
+   arm's length, and the whole thing prints as a picking slip. */
+
+/* The order number is the row's handle. A button, not a link: it opens a sheet, it does
+   not navigate, and a screen reader should not be told otherwise. */
+.order-open {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.order-open:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.order-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.order-detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* When it came in, and whose it is. */
+.order-detail-when {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.order-detail-assignee {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text);
+}
+
+.order-detail-assignee small {
+  color: var(--text-faint);
+}
+
+/* ---------- The list's time and people columns ---------- */
+
+.order-when {
+  white-space: nowrap;
+}
+
+/* How long an open order has sat. Amber past two hours, red past a day — the same line
+   the "waiting over 2 hours" count on the summary card draws. */
+.order-age {
+  white-space: nowrap;
+}
+
+.order-age.is-late {
+  color: var(--text-warning);
+  font-weight: 600;
+}
+
+.order-age.is-very-late {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.order-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.order-assignee-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+  font-size: 0.62rem;
+  font-weight: 800;
+  flex: none;
+}
+
+/* An open order nobody holds — quiet amber, not an alarm: it is a gap to fill. */
+.order-unassigned {
+  color: var(--text-warning);
+}
+
+.orders-filter-bar {
+  border-top: none;
+}
+
+.orders-truncated {
+  margin: 0;
+  padding: 0.55rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Call and WhatsApp, as the first thing under the badges. Nine times out of ten the reason
+   a shopkeeper opens an order at all is to ask the customer something before packing it,
+   and until now the number was plain text he had to retype into the dialler. */
+.order-detail-contact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.order-detail-contact .cell-sub {
+  flex: 1 0 100%;
+}
+
+.order-detail-address {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.order-detail-address svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+}
+
+.order-detail-address small {
+  color: var(--text-faint);
+}
+
+/* The delivery run — the Orders screen for the person on the scooter. One card per bag,
+   read standing at a gate: who, where, how much, and the one button that moves it on. */
+.delivery-run-bar {
+  justify-content: space-between;
+}
+
+.delivery-run-bar .field-hint {
+  margin: 0;
+}
+
+/* Two options, always side by side: inside a flex bar the control shrinks to its content
+   and the base rule's auto-fit would stack them. */
+.delivery-run-bar .segmented {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 0;
+}
+
+.delivery-card-note {
+  flex-basis: 100%;
+}
+
+.delivery-card-carrier {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Four digits read out at a doorstep and typed with a thumb. Wide-spaced so a misread
+   is obvious before the button is pressed. */
+.order-slot,
+.delivery-card-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* A window that has already closed on a bag still in the shop. Amber, not red: the promise
+   is broken, the order is not. */
+.order-slot.is-late,
+.delivery-card-slot.is-late {
+  color: var(--text-warning);
+  font-weight: 600;
+}
+
+.delivery-card-slot.is-now {
+  color: var(--brand-text);
+  font-weight: 600;
+}
+
+.delivery-card-slot {
+  flex-basis: 100%;
+}
+
+.delivery-slot-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.delivery-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.delivery-slot-row input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.order-otp-input {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-otp-field {
+  margin-bottom: 0.9rem;
+}
+
+.delivery-tally {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.delivery-tally h3 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.delivery-tally .field-hint {
+  margin: 0;
+}
+
+.delivery-tally-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.delivery-tally-row.is-total {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.delivery-tally-who {
+  min-width: 7rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* The only column that is money still to be handed over: UPI already landed in the
+   account and khata is not coming back at all. */
+.delivery-tally-cash {
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.delivery-tally-out {
+  margin-left: auto;
+  color: var(--text-warning);
+}
+
+.delivery-run-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1rem 1.15rem 1.15rem;
+}
+
+.delivery-run-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.75rem;
+}
+
+.delivery-run-group h3 {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.delivery-run-group h3 small {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.delivery-run-note {
+  margin: 0;
+  padding: 0 1.15rem 1rem;
+}
+
+.delivery-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.delivery-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.delivery-card-title {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-card-amount {
+  flex: none;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.delivery-card-address {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.delivery-card-address svg {
+  flex: none;
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+}
+
+.delivery-card-address small,
+.delivery-card-meta {
+  color: var(--text-faint);
+}
+
+.delivery-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.delivery-card-actions,
+.delivery-card-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.delivery-card-main {
+  margin-top: auto;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+
+.delivery-card-main .btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .delivery-run-body {
+    padding: 0.85rem;
+  }
+
+  .delivery-run-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+.order-detail-note {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-left: 2px solid var(--border-strong);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* The money, in the same order and with the same words as the copy the customer is holding
+   — so the two can be read side by side across a doorstep and agree line for line. */
+.order-detail-money {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.order-detail-money > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+}
+
+.order-detail-money .is-off span:last-child {
+  color: var(--text-success);
+}
+
+/* The one number the shopkeeper is standing there to collect. */
+.order-detail-money .is-total {
+  margin-top: 0.2rem;
+  padding-top: 0.6rem;
+  border-top: 2px solid var(--border);
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+.order-detail-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.order-detail-timeline li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.order-detail-timeline small {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ink-only rows. A tel: link on paper is nothing, so the number is repeated as text for
+   the printed slip and hidden on screen where the buttons are the better affordance. */
+.order-detail-printonly {
+  display: none;
+}
+
+@media print {
+  /* Same shape as the receipt and KOT prints above: flag the body, re-show exactly one
+     subtree, and leave every other print route untouched. The sheet is portalled to
+     <body>, so hiding the other body children leaves no reflowed dashboard behind it
+     generating stray blank pages. */
+  body.printing-order {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* The modal renders inside a portalled overlay, so the overlay itself is what survives. */
+  body.printing-order .modal-overlay,
+  body.printing-order .modal-overlay * {
+    visibility: visible !important;
+  }
+
+  body.printing-order .modal-overlay {
+    position: static !important;
+    display: block !important;
+    background: #fff !important;
+    padding: 0 !important;
+    inset: auto !important;
+  }
+
+  body.printing-order .order-detail-sheet {
+    position: static !important;
+    max-width: none !important;
+    width: auto !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* A picking slip is read off paper by whoever is filling the bag — the buttons, the
+     close cross and the tap-to-call row mean nothing there, and the slip is shorter
+     without them. */
+  body.printing-order .order-detail-sheet .modal-actions,
+  body.printing-order .order-detail-sheet .modal-close,
+  body.printing-order .order-detail-noprint {
+    display: none !important;
+  }
+
+  body.printing-order .order-detail-printonly {
+    display: block !important;
+    font-size: 12px;
+  }
+
+  /* The app is dark; paper is not. */
+  body.printing-order .order-detail-sheet .data-panel,
+  body.printing-order .order-detail-sheet .data-table,
+  body.printing-order .order-detail-sheet .data-table th,
+  body.printing-order .order-detail-sheet .data-table td {
+    background: #fff !important;
+    color: #000 !important;
+    border-color: #999 !important;
+  }
+
+  body.printing-order .order-detail-sheet .cell-sub,
+  body.printing-order .order-detail-sheet .order-detail-timeline,
+  body.printing-order .order-detail-sheet .order-detail-note {
+    color: #333 !important;
+  }
+
+  /* Overrides the 80mm receipt roll this stylesheet sets by default — a picking slip is an
+     ordinary sheet of paper. */
+  @page {
+    size: A5 auto;
+    margin: 10mm;
+  }
+}
+
 /* =========================================================================
    Greeting hero — dashboard welcome, live clock & daily business quote
    ========================================================================= */
@@ -9971,6 +11130,8 @@ label.switch {
 }
 
 .calc-card {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   width: 100%;
   max-width: 344px;
   max-height: calc(100dvh - 2.2rem);
@@ -10126,9 +11287,24 @@ label.switch {
   font-weight: 600;
   cursor: pointer;
   transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+  /* A keypad is tapped fast and repeatedly: no double-tap zoom, no text selection,
+     no long-press callout, no grey tap flash on top of our own pressed state. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.calc-key:hover { background: var(--surface-strong); border-color: var(--border-strong); }
-.calc-key:active { transform: scale(0.94); }
+/* Hover only where there is a real hover — on a touch screen it would stick to the
+   last key tapped and look like it is still held down. */
+@media (hover: hover) {
+  .calc-key:hover { background: var(--surface-strong); border-color: var(--border-strong); }
+  .calc-key.op:hover { background: rgba(var(--brand-rgb), 0.2); }
+  .calc-key.equals:hover { filter: brightness(1.05); }
+}
+/* `.is-pressed` is set by the key itself for pointer presses; `:active` covers Space. */
+.calc-key:active,
+.calc-key.is-pressed { transform: scale(0.94); background: var(--surface-strong); border-color: var(--border-strong); }
 .calc-key.fn { color: var(--text-muted); }
 .calc-key.danger { color: var(--danger); }
 .calc-key.op {
@@ -10137,7 +11313,8 @@ label.switch {
   border-color: rgba(var(--brand-rgb), 0.25);
   font-weight: 800;
 }
-.calc-key.op:hover { background: rgba(var(--brand-rgb), 0.2); }
+.calc-key.op:active,
+.calc-key.op.is-pressed { background: rgba(var(--brand-rgb), 0.24); }
 .calc-key.equals {
   grid-column: span 4;
   padding: 0.7rem 0;
@@ -10147,7 +11324,8 @@ label.switch {
   font-size: var(--fs-lg);
   font-weight: 800;
 }
-.calc-key.equals:hover { filter: brightness(1.05); }
+.calc-key.equals:active,
+.calc-key.equals.is-pressed { background: var(--brand); filter: brightness(0.94); }
 
 .calc-key:nth-last-child(3),
 .calc-key:nth-last-child(2) { grid-column: span 2; }
@@ -10223,6 +11401,22 @@ label.switch {
 .calc-out-row.grand b { font-size: var(--fs-lg); color: var(--brand-text); }
 .calc-out-row b.pos { color: var(--text-success); }
 .calc-out-row b.neg { color: var(--text-danger); }
+
+/* The number a tool tab exists to produce, with its copy button beside it. Smaller than
+   the Basic tab's button because it sits on a result row, not under a full-width display. */
+.calc-out-value { display: flex; align-items: center; gap: 0.5rem; }
+.calc-out-value .calc-copy { width: 30px; height: 30px; border-radius: 8px; }
+@media (pointer: coarse) {
+  .calc-out-value .calc-copy { width: 36px; height: 36px; }
+}
+
+/* Sits under the custom GST rate box when the typed rate is a retired slab (12%, 28%),
+   so billing old stock at it reads as history rather than as a live choice. */
+.calc-hint { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); }
+
+/* A discount typed larger than the price. The rows below are capped at the price, and
+   this is the line that says so instead of quoting a negative rupee figure. */
+.calc-warn { font-size: var(--fs-sm); font-weight: 600; color: var(--text-warning); }
 
 /* =========================================================================
    Quick actions + section titles + premium dashboard polish
@@ -10342,36 +11536,7 @@ label.switch {
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-/* ---------- The sheen ----------
-   One soft diagonal pass of light under the pointer — the gesture the owner asked
-   for by name ("jaise Claude, Gemini, ChatGPT mein hai"), and the cheapest thing on
-   this page that makes it read as made rather than assembled.
-
-   BRAND-tinted, not white: a white sweep across a white card is invisible in light
-   mode, so a white one would have needed a second value for dark and the two would
-   have drifted. One brand-tinted value reads in both.
-
-   It runs ONCE per hover and ends at opacity 0 — it is an answer to the pointer
-   arriving, not a shimmer that loops. Nothing on this dashboard breathes on its own;
-   see the motion section's rule. `inset: -1px` so the sweep covers the border too,
-   or the light stops a pixel short of the edge and reads as a seam. */
-.qa-tile::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  z-index: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    104deg,
-    transparent 34%,
-    color-mix(in srgb, var(--brand) 24%, transparent) 48%,
-    transparent 62%
-  );
-  transform: translateX(-120%);
-  opacity: 0;
-}
-
-/* Content rides above the sheen, or the sweep washes the label out as it passes. */
+/* The glyph, label and badge keep a stacking context of their own above the tile's fill. */
 .qa-icon,
 .qa-label,
 .qa-badge {
@@ -10384,10 +11549,6 @@ label.switch {
     border-color: color-mix(in srgb, var(--brand) 45%, var(--border-strong));
     background: color-mix(in srgb, var(--brand) 4%, var(--surface-card));
     box-shadow: var(--shadow-md);
-  }
-
-  .qa-tile:hover::before {
-    animation: qaSheen calc(var(--motion-slow) * var(--motion-scale)) var(--motion-ease) both;
   }
 
   /* The chip answers with the tile rather than a beat after it — one object, one
@@ -10413,12 +11574,6 @@ label.switch {
    is navigating away just sits there looking unclicked. */
 .qa-tile:active {
   transform: translateY(0) scale(0.988);
-}
-
-@keyframes qaSheen {
-  from { opacity: 0; transform: translateX(-120%); }
-  30%  { opacity: 1; }
-  to   { opacity: 0; transform: translateX(120%); }
 }
 
 /* ---------- The chip ----------
@@ -15517,42 +16672,6 @@ button.getting-started-step {
 .plan-cards > .plan-card:nth-child(3) { animation-delay: calc(0.18s * var(--motion-scale)); }
 .plan-cards > .plan-card:nth-child(4) { animation-delay: calc(0.25s * var(--motion-scale)); }
 
-/* One diagonal pass of light across the recommended card as the page settles, and again
-   on hover. Transform + opacity only, so it costs a compositor layer and nothing else. */
-.plan-card-sheen {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 55%;
-  pointer-events: none;
-  opacity: 0;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.14), transparent);
-  transform: translateX(-140%) skewX(-14deg);
-}
-
-:root[data-theme='light'] .plan-card-sheen {
-  background: linear-gradient(100deg, transparent, rgba(var(--brand-rgb), 0.12), transparent);
-}
-
-.plan-card.popular .plan-card-sheen,
-.plan-card.recommended .plan-card-sheen {
-  opacity: 1;
-  animation: planSheen calc(1800ms * var(--motion-scale)) var(--motion-ease) 0.5s both;
-}
-
-@media (hover: hover) {
-  .plan-card:hover .plan-card-sheen {
-    opacity: 1;
-    animation: planSheen calc(1100ms * var(--motion-scale)) var(--motion-ease) both;
-  }
-}
-
-@keyframes planSheen {
-  from { transform: translateX(-140%) skewX(-14deg); }
-  to { transform: translateX(320%) skewX(-14deg); }
-}
-
 @media (hover: hover) {
   .plan-card:hover {
     transform: translateY(-4px);
@@ -15622,22 +16741,6 @@ button.getting-started-step {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-/* One slow glint across the ribbon. It is the only looping motion on a card, and it is on
-   the one card the page is recommending. */
-.plan-card-ribbon::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45), transparent 70%);
-  transform: translateX(-120%);
-  animation: planGlint calc(4.5s / max(var(--motion-scale), 0.001)) ease-in-out infinite;
-}
-
-@keyframes planGlint {
-  0%, 62% { transform: translateX(-120%); }
-  92%, 100% { transform: translateX(220%); }
 }
 
 /* The price re-enters whenever the monthly/yearly toggle flips — React remounts the block
@@ -19047,6 +20150,23 @@ button.getting-started-step {
   line-height: 1.15;
 }
 
+.viz-chart-note {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.9rem;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--viz-2);
+  background: color-mix(in srgb, var(--viz-2) 9%, transparent);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}
+
+.viz-chart-note strong { color: var(--text); }
+.viz-chart-note.is-warning {
+  border-left-color: var(--danger, #b42318);
+  background: color-mix(in srgb, var(--danger, #b42318) 9%, transparent);
+}
+
 /* ---- ranked bars ----------------------------------------------------------
    HTML rather than SVG because the labels are names, and names need to wrap,
    truncate and pick up the app's font stack. Every row states its own value, so
@@ -21506,6 +22626,16 @@ button {
   color: var(--brand-dark);
 }
 
+/* A chip that is an ANSWER rather than a shortcut — which open order this bill belongs to.
+   Same tint the .grn-choice cards use for a picked option, because it is the same kind of
+   choice and two ways of showing "this one" on one screen is one too many. */
+.scan-chip.selected {
+  border-color: var(--brand);
+  background: rgba(var(--brand-rgb), 0.12);
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
 /* ===========================================================================
    Lot-wise purchase — batch, expiry, MRP and the scheme column.
    ===========================================================================
@@ -23767,6 +24897,12 @@ button {
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+@media (pointer: coarse) {
+  /* Thumb-sized keys: the desktop 0.6rem padding makes ~38px rows, easy to miss. */
+  .calc-key { padding: 0.8rem 0; font-size: var(--fs-lg); }
+  .calc-key.equals { padding: 0.85rem 0; }
 }
 
 /* A modal's action row, pinned.
@@ -29339,6 +30475,394 @@ button {
   flex: 1 1 200px;
 }
 
+/* ---------- Accounting: the working under the totals ----------
+
+   Everything below exists because a figure on this screen has to be checkable. They are
+   all quiet on purpose: this page is read, not operated, and a screen of statements that
+   each shout carries no emphasis at all. One tinted surface, hairline rules, and colour
+   spent only where direction actually matters (a loss, an overdue bucket, a delta). */
+
+/* Money the shop holds that is not its own, and money already parted with. A strip, not a
+   stat card — these are qualifications on the tiles above, not figures of their own rank. */
+.acct-advance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.acct-advance strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Who the outstanding money actually is. Two panels side by side on a desktop, stacked on
+   a phone — never a 2-up at 380px, where each name would wrap onto three lines. */
+.acct-top-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.acct-panel-title {
+  margin: 0 0 0.7rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.acct-top-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.acct-top-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-base);
+}
+
+.acct-top-list li:last-child {
+  border-bottom: none;
+}
+
+.acct-top-list li > span {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.acct-top-list li small {
+  font-size: var(--fs-2xs);
+  color: var(--text-faint);
+}
+
+/* A name that opens that party's statement. Underlined on hover only: five underlined
+   names in a row read as a form, and the row is a list first. */
+.acct-party-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-party-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* ---------- This period against the one before ---------- */
+
+.acct-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1.2rem;
+}
+
+.acct-compare-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.acct-compare-label {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-compare-pill strong {
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-compare-delta {
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Direction, not magnitude — and `up` means "the good way", which for expenses is down.
+   The component decides which; the colour only reports the decision. */
+.acct-compare-delta.up { color: var(--text-success); }
+.acct-compare-delta.down { color: var(--text-danger); }
+
+/* ---------- Memo blocks: true, and deliberately outside the statement ---------- */
+
+.acct-memo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1.6rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+/* Dashed, not solid, and outside .pnl-sheet: the border is the whole point. Purchases in
+   the period are NOT cost of goods sold, and a block that looked like one more row of the
+   statement would invite exactly the confusion the figures are there to prevent. */
+.acct-memo > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.acct-memo span {
+  color: var(--text-muted);
+}
+
+.acct-memo strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-memo strong.negative {
+  color: var(--text-danger);
+}
+
+.acct-memo p {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: var(--fs-2xs);
+  color: var(--text-faint);
+}
+
+/* ---------- A statement that disagrees with the balance says so ---------- */
+
+.acct-flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.7rem 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.acct-flag svg {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.acct-flag.warn {
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  color: var(--text-warning);
+}
+
+/* ---------- How old the money is ---------- */
+
+.acct-aging {
+  margin: 0.8rem 0 1rem;
+}
+
+.acct-aging-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.acct-aging-head small {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.acct-aging-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 0.4rem;
+}
+
+.acct-aging-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.acct-aging-cell span {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.acct-aging-cell strong {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* An empty bucket stays on the row and stays grey. The gap is the information: a strip
+   with only the first cell inked says "all of it is recent" faster than any label. */
+.acct-aging-cell.filled strong {
+  color: var(--text);
+}
+
+/* Over six months. The one bucket that is not a fact about timing but a warning about
+   money, so it is the one bucket that gets colour. */
+.acct-aging-cell.danger.filled {
+  border-color: var(--danger);
+}
+
+.acct-aging-cell.danger.filled strong {
+  color: var(--text-danger);
+}
+
+/* ---------- Day book ---------- */
+
+.acct-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.acct-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  /* ~30px: a filter chip is chrome, and chrome that is button-sized competes with the
+     one action on the view. */
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.acct-chips button small {
+  font-weight: 400;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-chips button:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+.acct-chips button.active {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+}
+
+.acct-chips button.active small {
+  color: inherit;
+}
+
+/* A voucher type with nothing in it stays visible and unclickable — a chip that vanished
+   would leave the shopkeeper unsure whether he filtered it out or the month had none. */
+.acct-chips button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The line a shopkeeper compares against the cash he counted that night. Tinted rather
+   than ruled, so it reads as a band closing a group instead of as one more voucher. */
+.data-table tr.acct-day-total td {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Udhaar coming back down is the good direction, and on a column where most rows are
+   money going out it needs to be readable as such at a glance. */
+.data-table td.num.positive {
+  color: var(--text-success);
+}
+
+/* ---------- Ledger row detail ---------- */
+
+/* The bill or PO number. Tabular and unwrapped: it is looked up, not read. */
+.acct-ref {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* Both sit UNDER the particulars rather than beside it. They are provenance, and a
+   disputed entry needs them present, not prominent. */
+.acct-edited,
+.acct-by {
+  display: block;
+  font-size: var(--fs-2xs);
+  line-height: 1.35;
+}
+
+.acct-edited {
+  color: var(--text-warning);
+}
+
+.acct-by {
+  color: var(--text-faint);
+}
+
+/* The count under a stat tile's label: "across 47 people" is a different fact from the
+   total and must not compete with it. */
+.stat-card .stat-sub {
+  margin-top: 0.15rem;
+  font-size: var(--fs-2xs);
+  color: var(--text-faint);
+}
+
+/* A statement grew from five columns to seven and the day book from six to nine, which is
+   more than a phone holds. .data-panel already scrolls; this only keeps the cells from
+   collapsing into two-character columns on the way. */
+@media (max-width: 720px) {
+  .acct-compare {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .acct-aging-bars {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* The notifications-page variant: an offer strip, not a settings block, so it needs the
    panel chrome the Settings version inherits from its surrounding .panel. */
 .push-settings-compact {
@@ -34692,23 +36216,6 @@ select:disabled {
   margin-top: 0.2rem;
 }
 
-@media (hover: hover) {
-  .auth-cta::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 45%;
-    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-    transform: translateX(-180%);
-    pointer-events: none;
-  }
-
-  .auth-cta:hover::after {
-    animation: authSheen 0.65s ease;
-  }
-}
-
 /* A <Link> wearing .btn — it needs the block behaviour a <button> already has. */
 .auth-cta-secondary {
   display: flex;
@@ -34766,6 +36273,19 @@ select:disabled {
   color: var(--brand-text);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* The DPDP notice under the tick.
+   Indented to the tick's text column rather than to the box, so it reads as belonging to
+   that sentence instead of starting a new one. A step quieter than .auth-terms, because the
+   tick is the thing being asked for and this is the thing being explained — and it must NOT
+   be a label: see the comment at the call site. */
+.auth-consent-note {
+  margin: 0.4rem 0 0;
+  padding-left: calc(16px + 0.55rem);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-faint);
 }
 
 /* ---------- Signup wizard, inside the new pane ---------- */
@@ -34865,10 +36385,6 @@ select:disabled {
   0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
   70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
   100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
-}
-
-@keyframes authSheen {
-  to { transform: translateX(320%); }
 }
 
 /* ---------- Stacked, below the split ----------
@@ -40142,6 +41658,49 @@ select:disabled {
 
 /* Is the online counter open right now. The dot does the work — a shopkeeper glancing at
    this card should know the answer before reading a word of it. */
+.sf-link {
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+/* Live reads as a fact, not as a reward — a thin green edge, nothing celebratory. The
+   shopkeeper checks this switch when something is wrong, so it has to be readable at a
+   glance rather than decorated. */
+.sf-link.is-live {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+
+.sf-link label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+
+.sf-link input[type='checkbox'] { margin-top: 0.2rem; flex: none; }
+
+/* A switch that cannot be turned on yet must LOOK unavailable, or the shopkeeper taps it
+   twice and decides the app is broken. The reason sits directly underneath. */
+.sf-link input[type='checkbox']:disabled { cursor: not-allowed; opacity: 0.5; }
+.sf-link input[type='checkbox']:disabled + span { opacity: 0.6; }
+
+.sf-link label strong { display: block; font-size: var(--fs-base); }
+.sf-link label small { display: block; margin-top: 0.15rem; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.45; }
+
+.sf-link-missing {
+  margin: 0.55rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-warning);
+  line-height: 1.5;
+}
+
 .sf-status {
   display: flex;
   align-items: flex-start;
@@ -40350,6 +41909,71 @@ select:disabled {
   gap: 0.7rem;
   padding-top: 0.6rem;
   border-top: 1px solid var(--border);
+}
+
+/* Where this account is signed in.
+
+   Behind its own rule, like the danger block below it, because it is a different question
+   from the three facts and one form above: not "what is this login" but "who else is
+   holding it". Rows rather than a table — there are two facts per device and a button, and
+   a table of three columns on a phone is four lines of wrapped header for nothing. */
+.security-devices {
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.security-devices h3 {
+  margin: 0 0 0.25rem;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  /* The gap does the work on a phone: when the button wraps under the text it must not sit
+     flush against the line it belongs to. */
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.device-row-main {
+  /* min-width:0 so a long user-agent-derived name truncates inside the row instead of
+     pushing the Sign out button off the card. */
+  flex: 1 1 12rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.device-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.device-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
 }
 
 /* Closing the account.
@@ -43020,11 +44644,7 @@ select:disabled {
 :root[data-motion='off'] .ov-page .ov-side > *,
 :root[data-motion='off'] .ov-page .qa-grid > *,
 :root[data-motion='off'] .ov-page .rank-bar > i,
-:root[data-motion='off'] .ov-page .hisaab-bar-seg,
-/* The sheen is `both`, so at zero duration it would otherwise hold its FIRST frame
-   — a brand-tinted band parked across the tile for as long as the pointer is on it,
-   which is the exact opposite of what turning motion off is asking for. */
-:root[data-motion='off'] .ov-page .qa-tile:hover::before {
+:root[data-motion='off'] .ov-page .hisaab-bar-seg {
   animation: none;
 }
 
@@ -43033,8 +44653,7 @@ select:disabled {
   .ov-page .ov-side > *,
   .ov-page .qa-grid > *,
   .ov-page .rank-bar > i,
-  .ov-page .hisaab-bar-seg,
-  .ov-page .qa-tile:hover::before {
+  .ov-page .hisaab-bar-seg {
     animation: none;
   }
 
@@ -48292,27 +49911,25 @@ dialog.payment-verify-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
    Nothing here reopens any of those: this layer adds MOTION, which none of them
    were, plus one neutral light edge that carries no brand colour at all.
 
+   REVISED LATER — the hover “sweep” this layer introduced (a light that
+   travelled across a stat card, a theme swatch, a quick-action tile, a plan
+   card, its ribbon and the login button) was taken back out at the owner’s
+   request: “card pe hover kar raha aur kahin bhi, animation ghoom ke jaa raha
+   hai — usko hata do.” What answers a pointer now is STATE, not travel: the
+   lift, the shadow, the border and the chip nudge. The cascade on arrival and
+   the press stayed — neither of those travels across anything. Do not
+   reinstate the sweep; treat it as a fifth entry on the rejected list above.
+
    Every duration and delay below is multiplied by --motion-scale, so Settings →
    Motion "off" and the OS reduced-motion preference still mean genuinely no
    animation rather than a fast one — same contract as the rest of the app.
    ========================================================================== */
 
 :root {
-  /* One sweep length and one rise curve, so every card in the app accelerates
-     identically. A card that eases differently from the card beside it is the
-     tell that a UI was assembled rather than designed. */
-  --card-sweep: 640ms;
+  /* One rise curve, so every card in the app accelerates identically. A card
+     that eases differently from the card beside it is the tell that a UI was
+     assembled rather than designed. */
   --card-rise: cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* A light travelling across the card, not a light sitting on it. The rejected
-   wash was static and brand-coloured; this is transient and only exists while a
-   pointer is actually on the card, which is why it reads as material rather
-   than as decoration. */
-@keyframes cardSweep {
-  from { opacity: 0; transform: translateX(-62%) skewX(-12deg); }
-  38%  { opacity: 1; }
-  to   { opacity: 0; transform: translateX(62%) skewX(-12deg); }
 }
 
 /* ---------- 1. A glass edge at rest, dark mode only ----------
@@ -48320,8 +49937,8 @@ dialog.payment-verify-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
    hairline and a shadow, and nothing else — so it reads as an outline rather
    than as a surface with a top. A 4.5%-white fade over the top third gives it
    one, and because it is white and not the brand it cannot stain anything.
-   Light mode gets nothing here on purpose: white-on-white is invisible, and the
-   premium signal there is carried by the motion below instead. */
+   Light mode gets nothing here on purpose: white-on-white is invisible; there a
+   card is carried by its own border and shadow. */
 /* Dialogs are deliberately NOT in this list. A modal is already the highest thing
    on the page and carries its own --shadow-lg; 64 of them share .modal-card, and
    changing what a dialog is made of to win a little depth on a card is the wrong
@@ -48332,36 +49949,13 @@ dialog.payment-verify-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 42%);
 }
 
-/* ---------- 2. The sweep, on cards a pointer can actually land on ---------- */
-.stat-card::before,
-.theme-swatch::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0;
-  background: linear-gradient(100deg, transparent 34%, rgba(255, 255, 255, 0.16) 50%, transparent 66%);
-}
-
-/* White light over a white card is nothing at all, so in light mode the sweep
-   borrows the shop's own accent at a tenth of its strength. It is moving and
-   gone inside two thirds of a second — the thing the old static wash was not. */
-:root[data-theme='light'] .stat-card::before,
-:root[data-theme='light'] .theme-swatch::before {
-  background: linear-gradient(100deg, transparent 34%, rgba(var(--brand-rgb), 0.10) 50%, transparent 66%);
-}
-
+/* The theme swatch keeps its clipping: the tone dots are drawn out to the card
+   edge and would spill past the rounded corner without it. (This used to also
+   contain the hover sweep — a light that travelled across a card. Removed at the
+   owner's request: see the note at the top of this layer.) */
 .theme-swatch { overflow: hidden; }
 
-@media (hover: hover) {
-  .stat-card:hover::before,
-  .theme-swatch:hover::before {
-    animation: cardSweep calc(var(--card-sweep) * var(--motion-scale)) var(--card-rise) both;
-  }
-}
-
-/* ---------- 3. The page arrives as a cascade, not all at once ----------
+/* ---------- 2. The page arrives as a cascade, not all at once ----------
    .panel already fades up, but every panel on a screen carried the SAME 0.06s
    delay, so three panels landed in one thud. Stepping them is the difference
    between a screen that appears and a screen that assembles itself. Capped at
@@ -48391,7 +49985,7 @@ dialog.payment-verify-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .stat-grid > .stat-card:nth-child(3) { animation-delay: calc(0.08s * var(--motion-scale)); }
 .stat-grid > .stat-card:nth-child(4) { animation-delay: calc(0.11s * var(--motion-scale)); }
 
-/* ---------- 4. Press ----------
+/* ---------- 3. Press ----------
    A card that lifts under the pointer and then does nothing under the finger is
    half a control. The press is deliberately smaller than the lift so the card
    settles towards the page rather than snapping back to it. */
@@ -48402,7 +49996,7 @@ a.stat-card:active,
   transition-duration: calc(90ms * var(--motion-scale));
 }
 
-/* ---------- 5. The icon moves with its card ----------
+/* ---------- 4. The icon moves with its card ----------
    The stat card already nudges its own chip on hover; the theme swatch's dot
    did not move at all, so the two card families answered a pointer differently
    on the same screen. */
@@ -48414,7 +50008,7 @@ a.stat-card:active,
   .theme-swatch:hover .theme-swatch-tones { transform: scale(1.1); }
 }
 
-/* ---------- 6. The Overview's chip, on every other screen too ----------
+/* ---------- 5. The Overview's chip, on every other screen too ----------
    The block above this one (search "One chip now, in two sizes") replaced five
    different icon treatments with a single washed chip, and said why: "a flat
    tint reads as a sticker; a short directional wash with a hairline of its own
@@ -49671,4 +51265,1275 @@ a.stat-card:active,
    stranded at the far edge reading as an unrelated number. Capped so the two stay a pair. */
 .usg-bar {
   max-width: 190px;
+}
+
+/* Excel processing: real counts, with an indeterminate light trail. */
+.imp-live-panel { margin-top: 1rem; padding: 1rem; border: 1px solid rgba(var(--brand-rgb), .25); border-radius: 16px; background: linear-gradient(135deg, rgba(var(--brand-rgb), .09), transparent 75%); overflow: hidden; }
+.imp-live-heading { display: flex; align-items: center; gap: .5rem; color: var(--text); font-size: var(--fs-sm); font-weight: 650; }
+.imp-spark { color: var(--brand); font-size: 1.4rem; animation: imp-sparkle 2.4s ease-in-out infinite; }
+.imp-live-dots { display: flex; gap: 4px; margin-left: auto; }
+.imp-live-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--brand); animation: imp-sparkle 1.5s ease-in-out infinite; }
+.imp-live-dots i:nth-child(2) { animation-delay: .2s; }
+.imp-live-dots i:nth-child(3) { animation-delay: .4s; }
+.imp-live-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin: 1rem 0; }
+.imp-live-counts div { min-width: 0; }
+.imp-live-counts dt { color: var(--text-muted); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.imp-live-counts dd { margin: .3rem 0 0; color: var(--text); font-size: clamp(1.05rem, 4vw, 1.5rem); font-weight: 750; font-variant-numeric: tabular-nums; }
+.imp-live-caption { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; }
+.imp-live-panel .imp-bar { height: 8px; }
+.imp-live-panel .imp-bar > span { background: linear-gradient(90deg, transparent, var(--brand) 45%, var(--text) 100%); box-shadow: 0 0 12px rgba(var(--brand-rgb), .5); animation-duration: 2.2s; }
+@keyframes imp-sparkle { 0%, 100% { opacity: .45; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.1); } }
+:root[data-motion='off'] .imp-spark, :root[data-motion='off'] .imp-live-dots i { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) .imp-spark, :root:not([data-motion='full']) .imp-live-dots i { animation: none; }
+}
+
+/* Import choices explain their effects on touch screens as well as on hover. */
+.import-review-actions { width: 100%; min-width: 0; display: grid; gap: .85rem; text-align: start; }
+.import-review-intro { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; }
+.import-review-choice { min-width: 0; display: grid; gap: .35rem; }
+.import-review-choice .btn { width: 100%; white-space: normal; height: auto; min-height: 42px; }
+.import-review-choice p { margin: 0; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.5; overflow-wrap: anywhere; }
+
+/* The import review fits its content instead of creating a nested scroll area.
+   Very short viewports can scroll the overlay, keeping all text reachable. */
+.modal-card.modal-fit.import-modal--review {
+  position: relative;
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
+  --modal-pad-x: 1.15rem;
+  --modal-pad-y: 1rem;
+  padding: var(--modal-pad-y) var(--modal-pad-x);
+}
+.modal-card.modal-fit.import-modal--review .modal-header {
+  position: absolute;
+  top: .65rem;
+  right: .65rem;
+  margin: 0;
+  padding: 0;
+  z-index: 1;
+}
+.modal-card.modal-fit.import-modal--review .modal-body {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-bottom: .8rem;
+}
+.import-modal--review .imp-head { padding-right: 2.5rem; }
+.import-modal--review .imp-title { font-size: 1.05rem; line-height: 1.3; }
+.import-modal--review .imp-file { margin-top: .2rem; }
+.import-modal--review .imp-tally { margin-top: .7rem; gap: .6rem; }
+.import-modal--review .imp-tally li { padding: .5rem .65rem; }
+.import-modal--review .imp-note { margin-top: .6rem; line-height: 1.4; }
+.import-modal--review .import-review-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem .85rem; }
+.import-modal--review .import-review-intro { grid-column: 1 / -1; font-size: var(--fs-xs); line-height: 1.35; }
+.import-modal--review .import-review-choice { grid-template-rows: auto 1fr; align-content: start; }
+.import-modal--review .import-review-choice .btn { font-size: var(--fs-sm); padding: .55rem .65rem; }
+.import-modal--review .import-review-choice p { line-height: 1.35; }
+.modal-card.modal-fit.import-modal--review .modal-actions { padding-top: .65rem; padding-bottom: .75rem; }
+@media (max-width: 420px) {
+  .modal-card.modal-fit.import-modal--review { --modal-pad-x: .85rem; --modal-pad-y: .85rem; }
+  .import-modal--review .import-review-actions { gap: .55rem; }
+  .import-modal--review .imp-head { gap: .5rem; }
+  .import-modal--review .imp-mark { width: 34px; height: 34px; flex-shrink: 0; }
+  .import-modal--review .imp-tally li { padding: .45rem .5rem; }
+}
+
+.imp-stock-choice { display: grid; gap: .3rem; margin-top: .65rem; color: var(--text); font-size: var(--fs-sm); }
+.imp-stock-choice select { width: 100%; min-width: 0; padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--bg-elevated); }
+.imp-stock-choice small { color: var(--text-muted); line-height: 1.4; }
+.imp-review-errors { margin-top: .65rem; font-size: var(--fs-sm); }
+.imp-review-errors summary { cursor: pointer; }
+
+/* Content-sized import dialog with a stable width and top anchor. */
+.modal-card.modal-fit.import-modal {
+  position: relative;
+  flex: 0 0 auto;
+  height: auto;
+  max-height: calc(100dvh - var(--ov-top, 3.5rem) - var(--ov-bottom, 2rem));
+  min-width: 0;
+  overflow: hidden;
+  --modal-pad-x: 1.25rem;
+  --modal-pad-y: 1.25rem;
+  padding: var(--modal-pad-y) var(--modal-pad-x);
+  background: var(--surface-card);
+  animation: none;
+  transition: none;
+  transform: none;
+}
+.modal-card.modal-fit.import-modal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding-bottom: 1rem;
+}
+.modal-card.modal-fit.import-modal--run .modal-header {
+  position: absolute;
+  top: .75rem;
+  right: .75rem;
+  margin: 0;
+  padding: 0;
+  z-index: 1;
+}
+.import-modal--run .imp-head { padding-right: 2.5rem; }
+.import-modal .imp { overflow-wrap: anywhere; }
+.import-modal .imp-title { line-height: 1.4; }
+.import-modal .imp--done { padding: .5rem 0 .25rem; }
+.import-modal .imp--done,
+.import-modal .imp-details,
+.import-modal .imp-mark > svg,
+.import-modal .imp-spark,
+.import-modal .imp-live-dots i {
+  animation: none;
+  transform: none;
+}
+.import-modal .imp-live-heading { line-height: 1.5; }
+.import-modal .imp-live-heading > span:nth-child(2) { flex: 1; min-width: 0; }
+.import-modal .imp-live-dots { flex-shrink: 0; }
+.import-modal .imp-live-panel {
+  border-radius: 14px;
+  box-shadow: none;
+  background: rgba(var(--brand-rgb), .04);
+}
+.import-modal .imp-live-counts { gap: 0; }
+.import-modal .imp-live-counts > div { padding: .25rem .65rem; }
+.import-modal .imp-live-counts > div:first-child { padding-left: 0; }
+.import-modal .imp-live-counts > div + div { border-left: 1px solid var(--border); }
+.import-modal .imp-live-counts dd { white-space: nowrap; }
+.import-modal .imp-live-panel .imp-bar { height: 4px; }
+.import-modal .imp-live-panel .imp-bar > span { box-shadow: none; }
+.import-modal .imp-stat { font-variant-numeric: tabular-nums; }
+.modal-card.modal-fit.import-modal .modal-actions .btn {
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .modal-card.modal-fit.import-modal { --modal-pad-x: .9rem; --modal-pad-y: 1rem; }
+  .import-modal .imp-live-panel { padding: .8rem; }
+  .import-modal .imp-live-counts > div { padding-inline: .4rem; }
+  .import-modal--review .import-review-actions { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+  .modal-card.modal-fit.import-modal .modal-actions > .btn { flex: 1 1 0; min-width: 0; }
+}
+@media (max-height: 600px) {
+  .modal-card.modal-fit.import-modal .modal-actions { max-height: 45dvh; overflow-y: auto; }
+}
+/* A constant top anchor prevents short result cards from jumping on mobile. */
+.modal-overlay.import-overlay {
+  align-items: flex-start;
+  animation: none;
+}
+.modal-card.modal-fit.import-modal { margin: 0 auto; }
+
+/* Supplier bill capture: a compact, stable photo-to-review flow. */
+.modal-card.modal-fit.bill-scan-modal {
+  margin: 0 auto;
+  background: var(--surface-card);
+  animation: none;
+  transition: none;
+  overflow: hidden;
+}
+.modal-overlay.bill-scan-overlay { align-items: flex-start; animation: none; }
+.bill-scan-modal .modal-header h2 { font-size: clamp(1.1rem, 3vw, 1.35rem); line-height: 1.35; }
+.bill-scan-modal .modal-header p { margin-top: .4rem; font-size: var(--fs-sm); line-height: 1.6; max-width: 44ch; }
+.bill-scan-modal .modal-body { scrollbar-gutter: stable; }
+.bill-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; gap: .5rem; margin: 0 0 1.1rem; padding: 0; }
+.bill-flow li { display: flex; align-items: center; gap: .4rem; min-width: 0; padding-bottom: .65rem; border-bottom: 2px solid var(--border); color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.4; }
+.bill-flow li.is-current { border-color: var(--brand); color: var(--brand-text); font-weight: 700; }
+.bill-flow li.is-complete { color: var(--text-success); border-color: rgba(var(--success-rgb), .4); }
+.bill-flow-number { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border-radius: 50%; background: var(--surface-strong); font-size: 11px; font-variant-numeric: tabular-nums; }
+.bill-flow .is-current .bill-flow-number { background: rgba(var(--brand-rgb), .12); }
+.bill-scan-modal .bill-drop { padding: 1.35rem 1rem; gap: .65rem; border: 1px dashed rgba(var(--brand-rgb), .4); border-radius: 18px; background: radial-gradient(ellipse at 50% 0%, rgba(var(--brand-rgb), .1), transparent 75%), var(--surface); }
+.bill-drop-title { max-width: 30ch; color: var(--text); font-size: var(--fs-md); line-height: 1.5; }
+.bill-scan-modal .bill-drop p { max-width: 34ch; line-height: 1.5; }
+.bill-scan-modal .bill-drop .btn { min-height: 44px; margin-top: .2rem; min-width: 160px; white-space: normal; }
+.bill-capture-art { position: relative; width: 130px; height: 112px; display: grid; place-items: center; margin: .15rem 0 .5rem; }
+.bill-capture-paper { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 74px; height: 96px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-card); box-shadow: 0 8px 22px rgba(var(--brand-rgb), .12); color: var(--brand-text); }
+.bill-capture-paper i { display: block; height: 3px; width: 100%; border-radius: 3px; background: var(--border-strong); }
+.bill-capture-paper i:nth-of-type(2) { width: 70%; }
+.bill-capture-paper b { width: 55%; height: 4px; margin-left: auto; background: rgba(var(--brand-rgb), .4); border-radius: 3px; }
+.bill-capture-corner { position: absolute; width: 15px; height: 15px; border: 2px solid rgba(var(--brand-rgb), .45); }
+.bill-capture-corner:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-radius: 6px 0 0; }
+.bill-capture-corner:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-radius: 0 6px 0 0; }
+.bill-capture-corner:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-radius: 0 0 0 6px; }
+.bill-capture-corner:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-radius: 0 0 6px; }
+.bill-capture-badge { position: absolute; bottom: 5px; right: 15px; display: grid; place-items: center; width: 29px; height: 29px; border: 3px solid var(--surface-card); border-radius: 50%; color: var(--text-success); background: var(--surface-strong); }
+.bill-scan-modal .bill-drop.has-photo { padding: .85rem; background: var(--surface); }
+.bill-scan-modal .bill-picked { padding: .75rem; background: var(--surface); border-radius: 14px; }
+.bill-scan-modal .bill-picked img { width: 90px; height: 116px; object-fit: contain; background: var(--surface-card); }
+.bill-scan-modal .bill-picked-body strong { color: var(--text-success); }
+.bill-scan-modal .bill-chips { justify-content: center; gap: .4rem; }
+.bill-scan-modal .bill-scan-note { background: transparent; border-top: 1px solid var(--border); border-radius: 0; padding: .85rem 0 .2rem; line-height: 1.6; }
+.bill-scan-modal .bill-scan-note svg { color: var(--text-success); flex-shrink: 0; margin-top: .15rem; }
+.bill-scan-modal .bill-xfer { border: 1px solid var(--border); border-radius: 16px; background: rgba(var(--brand-rgb), .035); padding: 1rem; overflow: hidden; }
+.bill-scan-modal .bill-scan-glow { animation: none; opacity: .45; }
+.bill-scan-modal .modal-actions .btn { min-height: 44px; white-space: normal; }
+.bill-scan-modal .bill-read-head { line-height: 1.5; }
+@media (max-width: 420px) {
+  .bill-flow { gap: .35rem; }
+  .bill-flow li { align-items: flex-start; font-size: 11px; gap: .3rem; }
+  .bill-flow-number { flex-basis: 20px; height: 20px; }
+  .bill-scan-modal .bill-drop { padding: 1rem .75rem; }
+  .bill-scan-modal .modal-actions .btn { flex: 1; min-width: 0; }
+  .bill-scan-modal .bill-xfer { padding: .65rem; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); }
+}
+/* Keep capture readable without a tall illustration or repeated instructions. */
+.bill-scan-modal .modal-header p { margin-top: .2rem; line-height: 1.4; }
+.bill-scan-modal .bill-flow { margin-bottom: .75rem; }
+.bill-scan-modal .bill-drop { padding: .85rem; gap: .45rem; }
+.bill-scan-modal .bill-drop-title { line-height: 1.35; }
+.bill-scan-modal .bill-capture-art { width: 102px; height: 78px; margin: 0 0 .25rem; }
+.bill-scan-modal .bill-capture-paper { width: 58px; height: 72px; padding: 7px 9px; gap: 4px; }
+.bill-scan-modal .bill-capture-paper > svg { width: 20px; height: 20px; flex-shrink: 0; }
+.bill-scan-modal .bill-capture-badge { right: 8px; bottom: 0; }
+.bill-scan-modal .bill-chips { margin-top: .6rem; }
+.bill-scan-modal .bill-scan-note { margin-top: .6rem; padding: .6rem 0 .15rem; line-height: 1.4; }
+.bill-scan-modal .bill-picked img { width: 70px; height: 86px; }
+@media (max-height: 600px) {
+  .bill-scan-modal .bill-capture-art { display: none; }
+  .bill-scan-modal .bill-drop.has-photo { flex-direction: row; text-align: start; justify-content: space-between; }
+  .bill-scan-modal .bill-drop.has-photo .btn { min-width: 0; flex-shrink: 0; }
+}
+/* Decorative AI motion never changes card geometry or moves readable text. */
+.bill-ai-brand { display: inline-flex; align-items: center; gap: .5rem; }
+.bill-ai-spark { display: grid; place-items: center; flex: 0 0 26px; width: 26px; height: 26px; color: var(--brand-text); border-radius: 8px; background: rgba(var(--brand-rgb), .1); }
+.bill-ai-spark svg { width: 20px; height: 20px; }
+.bill-scan-modal .bill-capture-paper { position: relative; overflow: hidden; }
+.bill-scan-modal .bill-capture-paper::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 35%, rgba(var(--brand-rgb), .18) 48%, rgba(var(--brand-rgb), .6) 50%, transparent 54%);
+  opacity: 0;
+}
+@keyframes bill-ai-twinkle { 0%, 100% { opacity: .65; } 50% { opacity: 1; filter: drop-shadow(0 0 3px rgba(var(--brand-rgb), .45)); } }
+@keyframes bill-ai-sweep { 0%, 12% { transform: translateY(-100%); opacity: 0; } 22% { opacity: 1; } 68% { transform: translateY(100%); opacity: 1; } 75%, 100% { transform: translateY(100%); opacity: 0; } }
+@keyframes bill-ai-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0); } 50% { box-shadow: 0 0 18px 0 rgba(var(--brand-rgb), .12); } }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion='off']):not([data-motion='reduced']) .bill-ai-spark svg { animation: bill-ai-twinkle 3.8s ease-in-out infinite; }
+  :root:not([data-motion='off']):not([data-motion='reduced']) .bill-scan-modal .bill-capture-paper::after { animation: bill-ai-sweep 4.5s ease-in-out infinite; }
+  :root:not([data-motion='off']):not([data-motion='reduced']) .bill-scan-modal .bill-drop:not(.has-photo) { animation: bill-ai-glow 4.5s ease-in-out infinite; }
+}
+@media (max-height: 600px) {
+  .bill-scan-modal .bill-picked { padding: .5rem; margin-top: .5rem; }
+  .bill-scan-modal .bill-picked img { height: 70px; }
+}
+.bill-ai-intro { display: grid; gap: .2rem; }
+.bill-ai-intro > strong { color: var(--text); font-size: var(--fs-sm); font-weight: 650; line-height: 1.4; }
+.bill-ai-intro > span { font-size: var(--fs-xs); line-height: 1.45; }
+/* Capacity is shown before writing bill products, so a limit is a choice rather than a
+   row-by-row failure. */
+.catalog-add-capacity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .8rem;
+  margin: 0 0 .85rem;
+  padding: .75rem .85rem;
+  border: 1px solid rgba(var(--brand-rgb), .3);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--brand-rgb), .06);
+}
+.catalog-add-capacity.is-full {
+  border-color: rgba(var(--warning-rgb), .45);
+  background: rgba(var(--warning-rgb), .08);
+}
+.catalog-add-capacity strong,
+.catalog-add-capacity p { margin: 0; }
+.catalog-add-capacity p { margin-top: .18rem; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.45; }
+.catalog-add-capacity-warning { color: var(--text-warning) !important; font-weight: 650; }
+.catalog-add-capacity .btn { flex: 0 0 auto; text-align: center; white-space: normal; }
+@media (max-width: 520px) {
+  .catalog-add-capacity { align-items: stretch; flex-direction: column; }
+  .catalog-add-capacity .btn { width: 100%; }
+}
+/* ===========================================================================
+   New purchase order — the form read as a wholesaler's bill.
+   ===========================================================================
+   Three blocks, in the order the paper is read: whose bill it is (supplier,
+   bill no, dates), what is on it (numbered item rows), and what it comes to.
+   Every rule is scoped to .purchase-order-modal so the other screens that reuse
+   .line-item keep their layout. */
+
+.purchase-order-modal.modal-wide {
+  max-width: 1080px;
+}
+
+/* "PO-1 is ours, the bill no is his" — context, not a warning. */
+.po-number-note {
+  margin: 0 0 0.9rem;
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--brand-rgb), 0.07);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Whose bill this is. A bordered block so it reads as the bill's header. */
+.po-bill-details {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+/* The supplier gets two tracks where there's room: a firm name and its company
+   read truncated in a single column. */
+@media (min-width: 700px) {
+  .po-bill-details > .field:first-child {
+    grid-column: span 2;
+  }
+}
+
+/* Wide enough for the whole bill header on one line: supplier, then the four
+   short fields the eye reads left to right off the top of the paper. */
+@media (min-width: 1100px) {
+  .po-bill-details {
+    grid-template-columns: minmax(0, 1.8fr) repeat(4, minmax(0, 1fr));
+  }
+
+  .po-bill-details > .field:first-child {
+    grid-column: auto;
+  }
+}
+
+/* Items heading: the section name, then the GST-inclusive rule sitting over the
+   rows where the rate is actually typed. */
+.po-items-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.po-items-heading > span:first-child {
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
+.po-items-subtitle {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(var(--brand-rgb), 0.1);
+  color: var(--brand-text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.purchase-order-modal .line-items-head {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-bottom: 0.6rem;
+}
+
+.purchase-order-modal .line-items-head .row-actions {
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* The row number: which line of the bill this is, so "row 7 is wrong" can be
+   found at a glance on a twenty-line bill. */
+.line-item-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(var(--brand-rgb), 0.12);
+  color: var(--brand-text);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The rate is the one number copied off the paper that the whole bill hangs
+   on, so its box carries the brand tint. */
+.po-rate-field input {
+  font-weight: 600;
+  border-color: rgba(var(--brand-rgb), 0.45);
+  background: rgba(var(--brand-rgb), 0.04);
+}
+
+.po-rate-field label {
+  color: var(--brand-text) !important;
+  font-weight: 700;
+}
+
+/* Laptop: one row per item, with a narrow leading column for the number. The
+   index is the first child, so without its own column every field would shift
+   one track right into the wrong width.
+
+   Top-aligned, not bottom-aligned: the rate box carries "Last time ₹56.25 · date
+   · supplier" under it and the name carries its linked flag, and with `end`
+   those two tall cells pushed every other box down into a staircase. Top-aligned,
+   every label sits on one line and every box on the next; extras hang below
+   their own box. */
+@media (min-width: 1024px) {
+  .purchase-order-modal .line-item {
+    grid-template-columns:
+      24px
+      minmax(170px, 2fr)       /* product */
+      minmax(100px, 0.9fr)     /* unit */
+      minmax(68px, 0.6fr)      /* qty */
+      minmax(128px, 1fr)       /* rate (GST included) */
+      minmax(64px, 0.55fr)     /* disc % */
+      minmax(84px, 0.7fr)      /* GST % */
+      minmax(76px, 0.7fr)      /* HSN */
+      auto auto;
+    align-items: start;
+    padding: 0.65rem 0.25rem;
+  }
+
+  .purchase-order-modal .line-item .field label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Sits level with the input line, below the label. */
+  .purchase-order-modal .line-item-index {
+    margin-top: calc(var(--po-label-h) + (var(--po-control-h) - 24px) / 2);
+  }
+
+  .purchase-order-modal .line-foot > .line-total {
+    align-self: start;
+    min-height: calc(var(--po-label-h) + var(--po-control-h));
+    justify-content: flex-end;
+    padding-bottom: 0;
+  }
+
+  .purchase-order-modal .line-foot > .line-remove {
+    align-self: start;
+    margin: calc(var(--po-label-h) + (var(--po-control-h) - 34px) / 2) 0 0;
+  }
+
+  .purchase-order-modal .line-total strong {
+    font-size: var(--fs-md);
+    line-height: var(--po-control-h);
+  }
+
+  /* The lot row lines up under the product name, not under the row number —
+     it belongs to the product. */
+  .purchase-order-modal .line-item .line-batch {
+    grid-column: 2 / -1;
+  }
+
+  .purchase-order-modal .line-total .cell-sub {
+    display: block;
+    height: var(--po-label-h);
+    line-height: var(--po-label-h);
+  }
+
+  /* Under a 128px box the note reads as two short lines, not five. */
+  .purchase-order-modal .po-rate-field .rate-anchor {
+    font-size: var(--fs-2xs);
+    gap: 0 0.3rem;
+  }
+}
+
+/* Every box on a line the same height — the unit and GST dropdowns were taller
+   than the number boxes beside them, and their 0.8rem side padding plus chevron
+   left "12%" and "packet" room for three characters. */
+.purchase-order-modal {
+  --po-control-h: 38px;
+  --po-label-h: 1.35rem;
+}
+
+.purchase-order-modal .line-item .field > label {
+  display: block;
+  height: var(--po-label-h);
+  line-height: var(--po-label-h);
+  margin: 0;
+}
+
+.purchase-order-modal .line-item .field > input,
+.purchase-order-modal .line-item .dropdown-trigger {
+  height: var(--po-control-h);
+  min-height: var(--po-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+}
+
+.purchase-order-modal .line-item .dropdown-trigger {
+  gap: 0.25rem;
+  font-size: var(--fs-base);
+}
+
+/* Below a real laptop width the ten-track row cannot fit without cutting, so the
+   line becomes a card: name across the top, the six numbers under it, total and
+   delete on a footer strip. Three across on a tablet, two on a phone. */
+@media (max-width: 1023px) {
+  .purchase-order-modal .line-items {
+    padding: 0.6rem 0.5rem;
+  }
+
+  .purchase-order-modal .line-item {
+    position: relative;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+
+  .purchase-order-modal .line-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .purchase-order-modal .line-item .line-name,
+  .purchase-order-modal .line-item .line-batch,
+  .purchase-order-modal .line-item .line-scheme {
+    grid-column: 1 / -1;
+  }
+
+  .purchase-order-modal .line-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    grid-column: 1 / -1;
+    margin-top: 0.15rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--border);
+  }
+
+  .purchase-order-modal .line-total {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.4rem;
+    padding-bottom: 0;
+  }
+
+  .purchase-order-modal .line-total strong {
+    font-size: var(--fs-md);
+  }
+
+  .purchase-order-modal .line-remove {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .purchase-order-modal .line-item-index {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.7rem;
+  }
+
+  /* Leaves room for the corner badge beside the "Product name" label. */
+  .purchase-order-modal .line-item .line-name > label {
+    padding-right: 2rem;
+  }
+
+  .purchase-order-modal .line-items-head .row-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .po-bill-details {
+    padding: 0.7rem;
+  }
+}
+
+/* In the card the money strip closes the card — lot details first, then what the
+   line comes to and its delete. */
+@media (max-width: 1023px) {
+  .purchase-order-modal .line-item .line-batch {
+    order: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 0.1rem;
+  }
+
+  .purchase-order-modal .line-item .line-scheme {
+    order: 2;
+  }
+
+  .purchase-order-modal .line-foot {
+    order: 3;
+  }
+}
+
+@media (max-width: 600px) {
+  .purchase-order-modal .line-item {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .purchase-order-modal .line-item .line-batch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0.5rem;
+  }
+
+  /* A month box needs the width for "September, 2027"; batch no and expiry are the
+     pair read together off the strip, so both get a full line. */
+  .purchase-order-modal .line-batch > .field:nth-child(-n + 2) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Totals: the grand total is the answer the shopkeeper checks against the paper. */
+.purchase-order-modal .order-totals {
+  margin-top: 0.8rem;
+  background: var(--bg-elevated);
+}
+
+.purchase-order-modal .order-totals .grand {
+  padding-left: 1.2rem;
+  border-left: 1px solid var(--border);
+}
+
+@media (max-width: 520px) {
+  .purchase-order-modal .order-totals > div {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-basis: 100%;
+    text-align: left;
+  }
+
+  .purchase-order-modal .order-totals .grand {
+    padding: 0.5rem 0 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* The bill's total, riding in the footer beside Place order so it is on screen
+   however long the bill gets. Pushed to the far end; buttons stay where the
+   hand expects them. */
+.purchase-order-modal .modal-actions {
+  align-items: center;
+}
+
+.po-foot-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  margin-left: auto;
+  min-width: 0;
+  text-align: right;
+}
+
+.po-foot-count {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.po-foot-total strong {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  color: var(--brand-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Phone: the total gets its own strip above the buttons — beside three buttons
+   it would squeeze them onto two lines. */
+@media (max-width: 600px) {
+  .po-foot-total {
+    order: -1;
+    flex: 1 0 100%;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 0 0 0.15rem;
+  }
+}
+
+/* "Add line" at the foot of the list: a dashed slot where the next row will go. */
+.po-add-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 0.55rem;
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--brand-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.po-add-line:hover {
+  border-color: var(--brand);
+  background: rgba(var(--brand-rgb), 0.06);
+}
+
+.po-add-line:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The note the wholesaler reads, with one-tap delivery instructions under it. */
+.po-supplier-note textarea {
+  min-height: 64px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.po-note-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.po-note-chips .scan-chip {
+  min-height: 30px;
+  padding: 0.2rem 0.65rem;
+  gap: 0.3rem;
+  font-size: var(--fs-xs);
+}
+
+.po-note-chips .scan-chip.is-on {
+  border-color: var(--brand);
+  background: rgba(var(--brand-rgb), 0.1);
+  color: var(--brand-text);
+  font-weight: 600;
+}
+
+@media (pointer: coarse) {
+  .po-note-chips .scan-chip {
+    min-height: 36px;
+  }
+}
+
+/* "Goods will come here" — the shop's address as the wholesaler will read it. */
+.po-deliver-to {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin: 0.4rem 0 0.35rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(var(--brand-rgb), 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(var(--brand-rgb), 0.05);
+}
+
+.po-deliver-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(var(--brand-rgb), 0.12);
+  color: var(--brand-text);
+}
+
+.po-deliver-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.po-deliver-label {
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--brand-text);
+}
+
+.po-deliver-shop {
+  font-size: var(--fs-base);
+  color: var(--text);
+}
+
+.po-deliver-addr {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.po-deliver-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.1rem;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.po-deliver-edit {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+/* No address saved: amber, because the order will still go — just without a door. */
+.po-deliver-to.is-missing {
+  border-color: rgba(217, 119, 6, 0.45);
+  background: rgba(217, 119, 6, 0.07);
+}
+
+.po-deliver-to.is-missing .po-deliver-icon {
+  background: rgba(217, 119, 6, 0.15);
+  color: var(--text-warning);
+}
+
+.po-deliver-to.is-missing .po-deliver-label {
+  color: var(--text-warning);
+}
+
+.po-deliver-hint {
+  margin: 0 0 0.7rem;
+}
+
+@media (max-width: 520px) {
+  .po-deliver-to.is-missing {
+    flex-wrap: wrap;
+  }
+
+  .po-deliver-to.is-missing .po-deliver-body {
+    flex-basis: calc(100% - 34px - 0.7rem);
+  }
+
+  .po-deliver-to.is-missing .po-deliver-edit {
+    margin-left: calc(34px + 0.7rem);
+  }
+}
+
+/* ===========================================================================
+   Bill scan with AI — the toolbar button and the one-time showcase card.
+   ===========================================================================
+   Navy to green is the logo's own pair: navy for the product, green for money.
+   The button keeps toolbar size (the page's primary is "New purchase order", and
+   one loud action per view stands); what marks it out is the hairline, the bill
+   glyph and the AI tag. */
+
+.ai-bill-btn {
+  --ai-grad: linear-gradient(120deg, var(--brand) 0%, var(--success) 100%);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 36px;
+  padding: 0 0.5rem 0 0.7rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(var(--bg-elevated), var(--bg-elevated)) padding-box,
+    var(--ai-grad) border-box;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.ai-bill-btn:hover {
+  box-shadow: 0 4px 16px -6px rgba(var(--brand-rgb), 0.45);
+}
+
+.ai-bill-btn:active {
+  transform: translateY(1px);
+}
+
+.ai-bill-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.ai-bill-btn.is-small {
+  min-height: 32px;
+  gap: 0.4rem;
+  padding: 0 0.4rem 0 0.6rem;
+  font-size: var(--fs-xs);
+}
+
+/* The solid version, used once, inside the showcase card where it IS the action. */
+.ai-bill-btn.is-solid {
+  border: none;
+  padding: 0 0.55rem 0 0.8rem;
+  background: var(--ai-grad);
+  color: #fff;
+  box-shadow: 0 6px 18px -8px rgba(var(--brand-rgb), 0.7);
+}
+
+.ai-bill-btn.is-solid .ai-bill-glyph {
+  color: #fff;
+}
+
+.ai-bill-btn.is-solid .ai-tag {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.ai-bill-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-bill-glyph {
+  flex: none;
+  color: var(--brand-text);
+  overflow: visible;
+}
+
+.ai-bill-beam {
+  fill: var(--success);
+  opacity: 0.85;
+  animation: ai-beam 2.6s ease-in-out infinite;
+}
+
+@keyframes ai-beam {
+  0%, 12% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 0.85; }
+  55% { transform: translateY(11px); opacity: 0.85; }
+  65%, 100% { transform: translateY(11px); opacity: 0; }
+}
+
+.ai-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex: none;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(var(--brand-rgb), 0.14), rgba(45, 162, 50, 0.16));
+  color: var(--brand-text);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+}
+
+.ai-tag.is-lg {
+  align-self: flex-start;
+  padding: 0.2rem 0.55rem;
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.02em;
+}
+
+/* Phone toolbar: the words go, the bill + AI stay — still unmistakably the scanner. */
+@media (max-width: 480px) {
+  .page-head .ai-bill-btn:not(.is-small) .ai-bill-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* --- The showcase card ---------------------------------------------------- */
+
+.bill-scan-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg, var(--radius-md));
+  background:
+    linear-gradient(
+        115deg,
+        color-mix(in srgb, var(--bg-elevated) 94%, var(--brand)) 0%,
+        var(--bg-elevated) 55%,
+        color-mix(in srgb, var(--bg-elevated) 93%, var(--success)) 100%
+      )
+      padding-box,
+    linear-gradient(120deg, rgba(var(--brand-rgb), 0.55), rgba(45, 162, 50, 0.55)) border-box;
+  overflow: hidden;
+}
+
+.bill-scan-hero-art {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 128px;
+  height: 128px;
+  border-radius: var(--radius-md);
+  background: radial-gradient(circle at 50% 45%, rgba(var(--brand-rgb), 0.14), transparent 70%);
+}
+
+/* The paper stays paper in dark mode too — a white bill on a dark card still reads as a bill. */
+.bill-scan-art {
+  width: 96px;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 8px 14px rgba(15, 42, 77, 0.18));
+}
+
+.bsa-sheet {
+  fill: #fff;
+  stroke: rgba(15, 42, 77, 0.14);
+  stroke-width: 1;
+}
+
+.bsa-ink { fill: rgba(15, 42, 77, 0.16); }
+.bsa-ink-strong { fill: rgba(15, 42, 77, 0.32); }
+.bsa-rule { stroke: rgba(15, 42, 77, 0.12); stroke-width: 1; stroke-dasharray: 3 3; }
+.bsa-stamp { fill: rgba(var(--brand-rgb), 0.16); }
+.bsa-total { fill: var(--success); opacity: 0.85; }
+.bsa-tick-bg { fill: rgba(45, 162, 50, 0.16); }
+.bsa-tick { stroke: var(--success); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+
+/* Rows tick off one after another as the beam passes them. */
+.bsa-row .bsa-tick,
+.bsa-row .bsa-tick-bg {
+  animation: bsa-tick 3.6s ease-in-out infinite;
+}
+.bsa-row:nth-of-type(2) .bsa-tick,
+.bsa-row:nth-of-type(2) .bsa-tick-bg { animation-delay: 0.35s; }
+.bsa-row:nth-of-type(3) .bsa-tick,
+.bsa-row:nth-of-type(3) .bsa-tick-bg { animation-delay: 0.7s; }
+
+@keyframes bsa-tick {
+  0%, 25% { opacity: 0; }
+  38%, 88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.bill-scan-beam {
+  animation: bsa-beam 3.6s ease-in-out infinite;
+}
+
+.bsa-beam-line {
+  fill: var(--success);
+}
+
+@keyframes bsa-beam {
+  0% { transform: translateY(-6px); opacity: 0; }
+  10% { opacity: 1; }
+  70% { transform: translateY(110px); opacity: 1; }
+  80%, 100% { transform: translateY(110px); opacity: 0; }
+}
+
+.bill-scan-spark {
+  fill: var(--success);
+  transform-origin: 118px 9.5px;
+  animation: bsa-spark 3.6s ease-in-out infinite;
+}
+
+@keyframes bsa-spark {
+  0%, 60% { transform: scale(0.4) rotate(0deg); opacity: 0; }
+  75% { transform: scale(1.1) rotate(20deg); opacity: 1; }
+  100% { transform: scale(0.9) rotate(45deg); opacity: 0; }
+}
+
+.bill-scan-hero-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 1.5rem;
+}
+
+.bill-scan-hero-title {
+  font-size: var(--fs-lg);
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.bill-scan-hero-text {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.bill-scan-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.bill-scan-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.bill-scan-step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(var(--brand-rgb), 0.12);
+  color: var(--brand-text);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.bill-scan-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.bill-scan-hero-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+}
+
+@media (max-width: 600px) {
+  .bill-scan-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    padding: 0.9rem;
+  }
+
+  .bill-scan-hero-art {
+    width: 100%;
+    height: 118px;
+  }
+
+  .bill-scan-art {
+    width: 82px;
+  }
+
+  .bill-scan-hero-body {
+    padding-right: 0;
+  }
+
+  .bill-scan-hero-actions .ai-bill-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-bill-beam,
+  .bill-scan-beam,
+  .bill-scan-spark,
+  .bsa-row .bsa-tick,
+  .bsa-row .bsa-tick-bg {
+    animation: none;
+  }
+
+  .bill-scan-beam,
+  .ai-bill-beam {
+    opacity: 0;
+  }
+}
+
+/* The bill's other side: the order form it becomes. Only where there is room — on a
+   narrower card the drawn bill and the words already say it. */
+.bill-scan-hero-result {
+  display: none;
+  flex: none;
+  margin-right: 1.75rem;
+}
+
+@media (min-width: 1200px) {
+  .bill-scan-hero-result {
+    display: block;
+  }
+}
+
+.bill-scan-result {
+  display: block;
+  width: 240px;
+  height: auto;
+  overflow: visible;
+}
+
+.bsr-arrow path {
+  stroke: var(--success);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bsr-arrow {
+  animation: bsr-nudge 3.6s ease-in-out infinite;
+}
+
+@keyframes bsr-nudge {
+  0%, 30% { transform: translateX(0); opacity: 0.5; }
+  50% { transform: translateX(4px); opacity: 1; }
+  80%, 100% { transform: translateX(0); opacity: 0.5; }
+}
+
+.bsr-card {
+  fill: var(--bg-elevated);
+  stroke: rgba(var(--brand-rgb), 0.3);
+  stroke-width: 1;
+  filter: drop-shadow(0 10px 18px rgba(15, 42, 77, 0.14));
+}
+
+.bsr-head { fill: rgba(var(--brand-rgb), 0.28); }
+.bsr-chip { fill: rgba(var(--brand-rgb), 0.12); }
+.bsr-rule { stroke: var(--border); stroke-width: 1; }
+
+.bsr-field {
+  fill: var(--surface);
+  stroke: var(--border-strong, var(--border));
+  stroke-width: 1;
+}
+
+.bsr-field.is-rate {
+  fill: rgba(var(--brand-rgb), 0.08);
+  stroke: rgba(var(--brand-rgb), 0.45);
+}
+
+.bsr-tick-bg { fill: rgba(45, 162, 50, 0.16); }
+.bsr-tick { stroke: var(--success); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.bsr-total { fill: var(--success); opacity: 0.9; }
+
+/* Rows land one after another, a beat behind the beam on the bill. */
+.bsr-row {
+  animation: bsr-fill 3.6s ease-in-out infinite;
+}
+
+@keyframes bsr-fill {
+  0%, 30% { opacity: 0.25; transform: translateX(-4px); }
+  45%, 90% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0.25; transform: translateX(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bsr-arrow,
+  .bsr-row {
+    animation: none;
+    opacity: 1;
+  }
 }

@@ -32,6 +32,9 @@ export default function PwaRegister() {
       }
     };
 
+    const onVisible = () => { if (document.visibilityState === 'visible') onLoad(); };
+    window.addEventListener('focus', onLoad);
+    document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('load', onLoad);
     window.addEventListener('online', onLoad);
     navigator.serviceWorker.addEventListener('message', onMessage);
@@ -40,6 +43,8 @@ export default function PwaRegister() {
     if (document.readyState === 'complete') onLoad();
 
     return () => {
+      window.removeEventListener('focus', onLoad);
+      document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('load', onLoad);
       window.removeEventListener('online', onLoad);
       navigator.serviceWorker.removeEventListener('message', onMessage);

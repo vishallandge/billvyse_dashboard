@@ -139,6 +139,7 @@ function withDefaults(payload) {
     insights: payload.insights || [],
     customerMix: { ...EMPTY_MIX, ...payload.customerMix },
     inventory: payload.inventory || null,
+    moneyDistribution: payload.moneyDistribution || null,
     // Null for every shop that does not run tables — the panel renders nothing rather
     // than a grid of zeroes.
     tables: payload.tables || null,
@@ -379,6 +380,13 @@ export default function AnalyticsPage() {
       [t('analytics.col.mode'), t('analytics.col.amount')],
       data.paymentMix.map((row) => [t(`analytics.mode.${row.mode}`), row.amount])
     );
+    if (data.moneyDistribution?.segments?.length) {
+      section(
+        t('analytics.chart.moneyDistribution'),
+        [t('analytics.col.category'), t('analytics.col.amount')],
+        data.moneyDistribution.segments.map((row) => [t(`analytics.money.${row.key}`), row.value])
+      );
+    }
     section(
       t('analytics.chart.topItems'),
       [t('analytics.col.item'), t('analytics.col.qty'), t('analytics.col.revenue'), t('analytics.col.profit'), t('analytics.col.margin')],
@@ -733,6 +741,51 @@ export default function AnalyticsPage() {
                   formatValue={rupees}
                   emptyLabel={t('analytics.empty.sales')}
                 />
+              </ChartCard>
+
+              <ChartCard
+                title={t('analytics.chart.moneyDistribution')}
+                hint={t('analytics.chart.moneyDistributionHint')}
+                href={drill('reports')}
+                table={{
+                  columns: [
+                    { key: 'part', label: t('analytics.col.category') },
+                    { key: 'amount', label: t('analytics.col.amount'), numeric: true },
+                  ],
+                  rows: (data.moneyDistribution?.segments || []).map((segment) => ({
+                    part: t(`analytics.money.${segment.key}`),
+                    amount: rupees(segment.value),
+                  })),
+                }}
+              >
+                <DonutChart
+                  segments={(data.moneyDistribution?.segments || []).map((segment, index) => ({
+                    ...segment,
+                    label: t(`analytics.money.${segment.key}`),
+                    color: ['var(--viz-1)', 'var(--viz-3)', 'var(--viz-2)'][index] || 'var(--viz-7)',
+                  }))}
+                  total={data.moneyDistribution?.total || 0}
+                  totalLabel={t('analytics.money.totalSales')}
+                  formatValue={rupees}
+                  emptyLabel={t('analytics.empty.sales')}
+                />
+                {data.moneyDistribution && (
+                  <div className={`viz-chart-note${Math.abs(data.moneyDistribution.total - data.moneyDistribution.tally) > 0.01 ? ' is-warning' : ''}`}>
+                    <strong>
+                      {Math.abs(data.moneyDistribution.total - data.moneyDistribution.tally) > 0.01
+                        ? t('analytics.money.tallyProblem')
+                        : t('analytics.money.tallyOk')}
+                    </strong>
+                    <span>
+                      {t('analytics.money.tallyLine', {
+                        total: rupees(data.moneyDistribution.total),
+                        tally: rupees(data.moneyDistribution.tally),
+                      })}
+                      {data.moneyDistribution.operatingLoss > 0 && ` · ${t('analytics.money.operatingLoss')}: ${rupees(data.moneyDistribution.operatingLoss)}`}
+                      {data.moneyDistribution.otherIncome > 0 && ` · ${t('analytics.money.otherIncome', { amount: rupees(data.moneyDistribution.otherIncome) })}`}
+                    </span>
+                  </div>
+                )}
               </ChartCard>
 
               {/* Best-seller and best-earner are routinely two different lines, and only one

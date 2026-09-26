@@ -25,7 +25,6 @@ import {
   CheckCircleIcon,
   AlertIcon,
   RupeeIcon,
-  UploadIcon,
   InfoIcon,
   LinkIcon,
   ClockIcon,
@@ -33,6 +32,8 @@ import {
   EyeIcon,
   ExcelIcon,
   PdfIcon,
+  MapPinIcon,
+  PhoneIcon,
 } from '../../components/Icons';
 import { gstRateOptions, unitOptions } from '../../../lib/catalog';
 import { purchaseTotals, chargedTotal, receivedQuantity, effectiveCost, mrpValue } from '../../../lib/purchaseTotals';
@@ -41,6 +42,7 @@ import { useDashboardUser } from '../../components/DashboardShell';
 import Dropdown from '../../components/Dropdown';
 import Modal from '../../components/Modal';
 import BillScanModal from '../../components/BillScanModal';
+import { AiBillButton, BillScanHero } from '../../components/BillScanPromo';
 import SupplierQuickAdd from '../../components/SupplierQuickAdd';
 import CatalogQuickAdd from '../../components/CatalogQuickAdd';
 import InvoiceAttachments from '../../components/InvoiceAttachments';
@@ -141,6 +143,28 @@ function formatWarningValues(values, lang) {
   return formatted;
 }
 
+// One-tap delivery instructions for the note the wholesaler reads. Keys, not text: the
+// phrase is written in the shopkeeper's own language, which is the one he talks to his
+// wholesaler in.
+const NOTE_CHIPS = ['noteChipAfter5', 'noteChipBefore1', 'noteChipCallFirst', 'noteChipStaff'];
+
+// Adds the phrase to the note, or takes it back out if it is already there, so a chip is a
+// switch rather than a button that stacks the same sentence up on every tap.
+function toggleNotePhrase(notes, phrase) {
+  const current = notes || '';
+  if (current.includes(phrase)) {
+    return current
+      .replace(phrase, '')
+      .replace(/\s*[.।]\s*[.।]/g, '.')
+      .replace(/^\s*[.।]\s*|\s*[.।]\s*$/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  const trimmed = current.trim();
+  if (!trimmed) return phrase;
+  return /[.।!?]$/.test(trimmed) ? `${trimmed} ${phrase}` : `${trimmed}. ${phrase}`;
+}
+
 export default function PurchaseOrdersPage() {
   const { t, lang } = useLanguage();
   const toast = useToast();
@@ -206,6 +230,27 @@ export default function PurchaseOrdersPage() {
   const [scanUsed, setScanUsed] = useState(true);
   const [scanNudgeHidden, setScanNudgeHidden] = useState(true);
   const [scanReview, setScanReview] = useState(null);
+  /**
+   * What the photographed bill actually is — goods already in the shop, or an order still
+   * to be delivered.
+   *
+   * Defaults to "already came", because that is what a wholesaler's printed bill means:
+   * he prints it when the load leaves his godown. The other answer exists for the rate
+   * list or the estimate a shopkeeper sometimes photographs instead, and for the shop
+   * that raises its order off the wholesaler's own sheet.
+   */
+  const [billGoodsIn, setBillGoodsIn] = useState(true);
+  /**
+   * The orders this wholesaler still owes goods on, and which of them this bill is for.
+   *
+   * A shop that ordered through the app and then scans the delivery bill was getting a
+   * SECOND purchase order for the same goods, while the first sat open forever asking after
+   * a load already on the shelf. Nothing is linked unless the shopkeeper says so: creating a
+   * separate purchase is the recoverable mistake (cancel the old order), and closing the
+   * wrong order with somebody else's bill is not.
+   */
+  const [openOrders, setOpenOrders] = useState([]);
+  const [linkOrderId, setLinkOrderId] = useState('');
   // The photos the scan was read from, waiting for an order to hang off. Kept apart from
   // `scanReview` because they outlive it by one step: the review is cleared when the form
   // is submitted, and these are used immediately after the order comes back with an id.
@@ -358,6 +403,35 @@ export default function PurchaseOrdersPage() {
     if (rows.length > 0) addSuggestions(rows);
   }, [suggestions]);
 
+  /**
+   * Asked only while a scanned bill is actually on screen, and re-asked whenever the
+   * wholesaler on it changes — he can be picked, corrected or created without leaving the
+   * form, and the list of orders he owes has to follow that rather than the scan's guess.
+   */
+  useEffect(() => {
+    if (!formOpen || !scanReview || editingId || !billGoodsIn || !form.supplierId) {
+      setOpenOrders([]);
+      setLinkOrderId('');
+      return;
+    }
+    let live = true;
+    // A wholesaler swapped on the review screen takes his orders with him; a link left
+    // standing would hang this bill on another man's order.
+    setLinkOrderId('');
+    apiFetch(`/api/seller/suppliers/purchase-orders/open?supplierId=${form.supplierId}`)
+      .then((data) => {
+        if (live) setOpenOrders(data?.orders || []);
+      })
+      // Silent on purpose. This is an offer, not a step: a shop whose network drops here
+      // saves the bill as its own purchase, which is exactly what used to happen anyway.
+      .catch(() => {
+        if (live) setOpenOrders([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [formOpen, scanReview, editingId, billGoodsIn, form.supplierId]);
+
   // Suppliers, the catalog and the scan status only change when the seller changes them,
   // so they are fetched once instead of on every filter change.
   useEffect(() => {
@@ -448,6 +522,12 @@ export default function PurchaseOrdersPage() {
   // What this load is worth at MRP, and what the shop makes on it. Only meaningful once
   // MRPs are actually being entered, so it stays out of the way until then.
   const shelfValue = useMemo(() => mrpValue(form.items), [form.items]);
+  // What the footer says beside Place order: how many lines are really on the bill and
+  // how much stock they bring in. Blank starter rows are not items.
+  // The number the wholesaler is told to ring. A staff login's own phone is not the shop's.
+  const shopPhone = user?.shopPhone || (user?.role !== 'staff' ? user?.phone : '') || '';
+  const filledLines = form.items.filter((line) => line.name.trim());
+  const filledQty = Number(filledLines.reduce((sum, line) => sum + (Number(line.quantity) || 0), 0).toFixed(3));
 
   /**
    * The total printed on the paper against what the form adds up to RIGHT NOW.
@@ -800,6 +880,11 @@ export default function PurchaseOrdersPage() {
       charges,
     });
     setScanReview(scan);
+    // Every scan is asked afresh. Remembering the last answer is how a shop that once
+    // photographed a rate list goes on booking real deliveries as orders nobody receives.
+    setBillGoodsIn(true);
+    setLinkOrderId('');
+    setOpenOrders([]);
     // He has now seen what it does, so the one-time offer has done its job.
     setScanUsed(true);
     setEditingId(null);
@@ -1041,6 +1126,19 @@ export default function PurchaseOrdersPage() {
    * it is a different bill.
    */
   async function submitOrder(status, force) {
+    /**
+     * Whether this save is a delivery as well as a purchase.
+     *
+     * Three conditions, and each one is the answer to a different way of getting this
+     * wrong: only on a scanned bill (a typed order is an order), only on a create (editing
+     * a saved order must never move stock), and never on a draft, which by definition has
+     * not been agreed to yet.
+     */
+    const receiveNow = Boolean(!editingId && scanReview && billGoodsIn && status !== 'draft');
+    // The order this bill was sent against, when the shopkeeper has said there is one. It
+    // makes the whole save a DELIVERY on an existing purchase rather than a new one, so it
+    // can only ever ride along with `receiveNow`.
+    const onOrderId = receiveNow ? linkOrderId : '';
     if (!form.supplierId) {
       toast.error(t('seller.selectSupplierFirst'));
       // Naming the problem is not the same as being able to solve it. A shop with no
@@ -1115,14 +1213,57 @@ export default function PurchaseOrdersPage() {
           roundOff: Number(form.charges.roundOff) || 0,
         },
         status,
+        goodsReceived: receiveNow || undefined,
         allowDuplicateInvoice: force || undefined,
       });
-      if (editingId) {
+      if (onOrderId) {
+        /**
+         * The bill laid on the order it was sent against. The server matches its lines to
+         * that order's, corrects the order to what the paper says, and receives it — so the
+         * goods are stocked once and the order that asked for them is the one that closes.
+         */
+        const done = await apiFetch(`/api/seller/suppliers/purchase-orders/${onOrderId}/bill`, {
+          method: 'POST',
+          body,
+        });
+        const fit = done?.billFit || {};
+        // Short supply is the louder fact, so it takes the one success line — the order is
+        // still open and the wholesaler still owes goods, which is not what "ho gaya" means.
+        toast.success(
+          fit.short?.length > 0
+            ? t('purchase.receivedPartialToast', { count: fit.short.length })
+            : t('purchase.billOnOrderToast', { label: done?.order?.label || '' })
+        );
+        // What the app changed on his own order to make it agree with the paper. Never
+        // silent: an added line or a raised quantity is the shopkeeper's order being
+        // rewritten, and only he can tell a genuine extra carton from a misread one.
+        const fitted = (fit.added?.length || 0) + (fit.raised?.length || 0);
+        if (fitted > 0) toast.info(t('purchase.billFitToast', { count: fitted }));
+        if (done?.notStocked?.length > 0) {
+          toast.error(t('purchase.stockGapToast', { count: done.notStocked.length }));
+        }
+        if (scanImages.length > 0 && done?.order?._id) {
+          saveScanImages(done.order._id, scanImages);
+        }
+      } else if (editingId) {
         await apiFetch(`/api/seller/suppliers/purchase-orders/${editingId}`, { method: 'PATCH', body });
         toast.success(t('purchase.updated'));
       } else {
         const created = await apiFetch('/api/seller/suppliers/purchase-orders', { method: 'POST', body });
-        toast.success(status === 'draft' ? t('purchase.draftSaved') : t('purchase.created'));
+        toast.success(
+          status === 'draft'
+            ? t('purchase.draftSaved')
+            : receiveNow
+              ? t('purchase.receivedToast')
+              : t('purchase.created')
+        );
+        // Goods that came in and reached no shelf — a line the bill named and the catalogue
+        // has no product for. Said here, while the crate is still open and the shopkeeper
+        // can say what these things are; an hour later he is looking at a stock list that is
+        // short and has no idea which delivery did it.
+        if (created?.notStocked?.length > 0) {
+          toast.error(t('purchase.stockGapToast', { count: created.notStocked.length }));
+        }
         // The bill this order was read off, now that there is an order to attach it to.
         // Deliberately after the success toast and never awaited into it: the order is
         // saved either way, and a failed upload must not read as a failed purchase.
@@ -1136,6 +1277,8 @@ export default function PurchaseOrdersPage() {
       setEditingLabel('');
       setScanReview(null);
       setScanImages([]);
+      setLinkOrderId('');
+      setOpenOrders([]);
       setDuplicate(null);
       load();
     } catch (err) {
@@ -1409,10 +1552,7 @@ export default function PurchaseOrdersPage() {
         </div>
         <div className="row-actions">
           {scanEnabled && (
-            <button type="button" className="btn btn-secondary btn-inline" onClick={() => setScanOpen(true)}>
-              <UploadIcon size={17} />
-              {t('billScan.button')}
-            </button>
+            <AiBillButton onClick={() => setScanOpen(true)} label={t('billScan.button')} />
           )}
           <button type="button" className="btn btn-primary btn-inline" onClick={() => openAdd()}>
             <PlusIcon size={17} />
@@ -1429,21 +1569,7 @@ export default function PurchaseOrdersPage() {
           is offered properly, once, with what it actually does written next to it, and it
           disappears the moment he has used it or said no. */}
       {scanEnabled && !scanUsed && !scanNudgeHidden && (
-        <div className="try-card">
-          <span className="try-card-icon"><UploadIcon size={20} /></span>
-          <div className="try-card-body">
-            <strong>{t('billScan.tryTitle')}</strong>
-            <p>{t('billScan.tryBody')}</p>
-          </div>
-          <div className="try-card-actions">
-            <button type="button" className="btn btn-primary btn-small btn-inline" onClick={() => setScanOpen(true)}>
-              {t('billScan.tryNow')}
-            </button>
-            <button type="button" className="icon-btn" data-tip={t('common.close')} onClick={hideScanNudge}>
-              <XIcon size={17} />
-            </button>
-          </div>
-        </div>
+        <BillScanHero onScan={() => setScanOpen(true)} onDismiss={hideScanNudge} />
       )}
 
       {loading && !data ? (
@@ -1747,9 +1873,7 @@ export default function PurchaseOrdersPage() {
                 {/* The strongest moment there is to show what the photo does: a shopkeeper
                     looking at an empty register is about to type his first bill by hand. */}
                 {scanEnabled && (
-                  <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={() => setScanOpen(true)}>
-                    <UploadIcon size={15} /> {t('billScan.button')}
-                  </button>
+                  <AiBillButton small onClick={() => setScanOpen(true)} label={t('billScan.button')} />
                 )}
               </div>
             )}
@@ -1982,15 +2106,29 @@ export default function PurchaseOrdersPage() {
       {formOpen && (
         <Modal
           as="form"
-          className="modal-wide"
+          className="modal-wide purchase-order-modal"
           onSubmit={(e) => handleSubmit(e, 'ordered')}
           onClose={() => setFormOpen(false)}
           title={editingId ? t('purchase.editOrder') : t('purchase.create')}
-          hint={t('purchase.formHint')}
+          // The GST-inclusive rule is said once, over the item rows where the rate is typed,
+          // rather than here as well — twice on one screen reads as noise, not emphasis.
           footer={
             <>
               <button type="submit" className="btn btn-primary btn-inline" disabled={submitting}>
-                {submitting ? t('common.saving') : editingId ? t('common.saveChanges') : t('purchase.placeOrder')}
+                {/* The button says what will actually happen. "Place order" on a bill for
+                    goods already stacked behind the counter is the whole confusion this
+                    screen exists to end. */}
+                {submitting
+                  ? t('common.saving')
+                  : editingId
+                    ? t('common.saveChanges')
+                    : linkOrderId && scanReview && billGoodsIn
+                    ? t('purchase.receiveOnOrder', {
+                        label: openOrders.find((open) => open._id === linkOrderId)?.label || '',
+                      })
+                    : scanReview && billGoodsIn
+                      ? t('purchase.receiveAndSave')
+                      : t('purchase.placeOrder')}
               </button>
               {!editingId && (
                 <button
@@ -2008,13 +2146,27 @@ export default function PurchaseOrdersPage() {
               <button type="button" className="btn btn-secondary btn-inline" onClick={() => setFormOpen(false)}>
                 {t('common.cancel')}
               </button>
+              {/* The bill's total beside the button that commits it. On a twenty-line bill
+                  the totals box is a long scroll away, and the number the shopkeeper checks
+                  against the paper before placing the order should not be. */}
+              {filledLines.length > 0 && (
+                <div className="po-foot-total" aria-live="polite">
+                  <span className="po-foot-count">
+                    {filledLines.length === 1
+                      ? t('purchase.footOneItem')
+                      : t('purchase.footItems', { count: filledLines.length })}
+                    {filledQty > 0 && ` · ${t('purchase.footQty', { qty: filledQty })}`}
+                  </span>
+                  <strong>{formatRupees(totals.totalAmount, lang)}</strong>
+                </div>
+              )}
             </>
           }
         >
           {/* Two numbers, two owners. Said once at the top of the form, with our own
               number named when there is one to name, so the field lower down only has to
               remind rather than explain. */}
-          <p className="field-hint">
+          <p className="field-hint po-number-note">
             {editingLabel
               ? t('purchase.twoNumbersEditing', { po: editingLabel })
               : t('purchase.twoNumbersNew')}
@@ -2026,6 +2178,77 @@ export default function PurchaseOrdersPage() {
                   <strong>{t('billScan.reviewTitle')}</strong>
                   <span className="cell-sub">{t('billScan.reviewHint')}</span>
                 </div>
+
+                {/* The one question the rest of this screen hangs off, asked first because
+                    it decides what every number below it will do.
+
+                    A wholesaler prints a bill when the load leaves his godown, so the
+                    photographed bill nearly always means the maal is already in the shop.
+                    Saved as an order, nothing happens to it: no stock, no udhaar, no input
+                    tax credit — and the shop gets reminded to chase goods it is already
+                    selling. The other answer is real too (a rate list, or an order raised
+                    off the wholesaler's own sheet), so it is asked rather than assumed.
+
+                    Same two-card shape as the short-supply question on the delivery screen,
+                    for the same reason: unequal boxes read as a recommendation, and neither
+                    of these is one. */}
+                <div className="form-grid cols-2" style={{ marginBottom: '0.6rem' }}>
+                  <label className={`grn-choice${billGoodsIn ? ' selected' : ''}`}>
+                    <input
+                      type="radio"
+                      name="scan-intent"
+                      checked={billGoodsIn}
+                      onChange={() => setBillGoodsIn(true)}
+                    />
+                    <span>
+                      <strong>{t('purchase.billGoodsInLabel')}</strong>
+                      <small>{t('purchase.billGoodsInHint')}</small>
+                    </span>
+                  </label>
+                  <label className={`grn-choice${billGoodsIn ? '' : ' selected'}`}>
+                    <input
+                      type="radio"
+                      name="scan-intent"
+                      checked={!billGoodsIn}
+                      onChange={() => setBillGoodsIn(false)}
+                    />
+                    <span>
+                      <strong>{t('purchase.billOrderOnlyLabel')}</strong>
+                      <small>{t('purchase.billOrderOnlyHint')}</small>
+                    </span>
+                  </label>
+                </div>
+
+                {/* "Is bill ka maal humne mangwaya tha kya?"
+
+                    A shop that orders through the app and then scans the delivery bill was
+                    getting a second purchase order for goods it already had on the way, and
+                    the first sat open forever chasing them. Offered only when this
+                    wholesaler actually owes a load, and never pre-picked: saving a separate
+                    purchase is the recoverable mistake, closing the wrong order with
+                    somebody else's bill is not. Solved on this screen rather than behind a
+                    link, because a link unmounts the form and throws the whole scan away. */}
+                {billGoodsIn && openOrders.length > 0 && (
+                  <div className="scan-suggestions">
+                    <span className="cell-sub">{t('purchase.billOnOrderAsk')}</span>
+                    {openOrders.map((open) => (
+                      <button
+                        key={open._id}
+                        type="button"
+                        className={`scan-chip${linkOrderId === open._id ? ' selected' : ''}`}
+                        // Tapping the picked one again is how he says "no, it is a separate
+                        // bill" — the answer this row opens on.
+                        onClick={() => setLinkOrderId((current) => (current === open._id ? '' : open._id))}
+                        data-tip={t('purchase.billOnOrderTip', {
+                          count: open.itemCount,
+                          amount: formatRupees(open.totalAmount, lang),
+                        })}
+                      >
+                        <LinkIcon size={11} /> {open.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* The bill's own grand total is an independent check on every row above
                     it: when the two tie, a misread digit or a dropped line is ruled out
@@ -2166,7 +2389,7 @@ export default function PurchaseOrdersPage() {
             )}
 
 
-              <div className="form-grid">
+              <div className="form-grid po-bill-details">
                 <div className="field" ref={supplierFieldRef}>
                   <label>{t('seller.supplier')}</label>
                   {/* The order will not save without this, so the way to fill it in has to
@@ -2226,7 +2449,10 @@ export default function PurchaseOrdersPage() {
 
               <div className="line-items">
                 <div className="line-items-head">
-                  <span>{t('seller.items')}</span>
+                  <div className="po-items-heading">
+                    <span>{t('seller.items')}</span>
+                    <span className="po-items-subtitle">{t('purchase.formHint')}</span>
+                  </div>
                   <div className="row-actions">
                     {/* Six extra boxes are the difference between a chemist's form and a
                         hardware shop's. The toggle is what lets one screen be both. */}
@@ -2241,6 +2467,7 @@ export default function PurchaseOrdersPage() {
 
                 {form.items.map((line, index) => (
                   <div className="line-item" key={index}>
+                    <span className="line-item-index" aria-hidden="true">{index + 1}</span>
                     <div className="field line-name">
                       <label>{t('seller.productName')}</label>
                       <input
@@ -2304,7 +2531,7 @@ export default function PurchaseOrdersPage() {
                         onChange={(e) => updateLine(index, { quantity: e.target.value })}
                       />
                     </div>
-                    <div className="field line-sm">
+                    <div className="field line-sm po-rate-field">
                       <label>{t('purchase.rate')}</label>
                       <input
                         type="number"
@@ -2350,7 +2577,7 @@ export default function PurchaseOrdersPage() {
                         placeholder="0"
                       />
                     </div>
-                    <div className="field line-sm">
+                    <div className="field line-sm po-gst-field">
                       <label>{t('purchase.gstPercent')}</label>
                       <Dropdown
                         value={line.gstRate}
@@ -2453,6 +2680,14 @@ export default function PurchaseOrdersPage() {
                     )}
                   </div>
                 ))}
+
+                {/* Where the thumb already is after the last row. On a long bill the button
+                    in the heading is screens away; this one follows the list down. */}
+                {form.items.length > 1 && (
+                  <button type="button" className="po-add-line" onClick={addLine}>
+                    <PlusIcon size={15} /> {t('seller.addLine')}
+                  </button>
+                )}
               </div>
 
               {/* The foot of the wholesaler's bill. Folded away by default because most
@@ -2526,9 +2761,74 @@ export default function PurchaseOrdersPage() {
                 )}
               </div>
 
-              <div className="field">
-                <label>{t('purchase.notes')}</label>
-                <input value={form.notes} onChange={updateForm('notes')} placeholder={t('purchase.notesPlaceholder')} />
+              {/* This note is not private: it is printed on the WhatsApp order and on the
+                  wholesaler's order sheet. So it is labelled as his, and the common case —
+                  the shopkeeper won't be in when the load comes — is one tap away. */}
+              {/* Where the load is going, exactly as the wholesaler will read it. It rides on
+                  the WhatsApp order and his order sheet, so the shopkeeper sees here which
+                  address and number are about to go out — and is told plainly when there is
+                  none, because an order with no address is a delivery boy on the phone. */}
+              <div className={`po-deliver-to${user?.shopAddress ? '' : ' is-missing'}`}>
+                <span className="po-deliver-icon" aria-hidden="true">
+                  <MapPinIcon size={18} />
+                </span>
+                <div className="po-deliver-body">
+                  <span className="po-deliver-label">{t('purchase.deliverTo')}</span>
+                  {user?.shopAddress ? (
+                    <>
+                      {user.shopName && <strong className="po-deliver-shop">{user.shopName}</strong>}
+                      <p className="po-deliver-addr">{user.shopAddress}</p>
+                      {shopPhone && (
+                        <span className="po-deliver-phone">
+                          <PhoneIcon size={13} /> {shopPhone}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <p className="po-deliver-addr">{t('purchase.deliverToMissing')}</p>
+                  )}
+                </div>
+                {/* A new tab, never a navigation: leaving this page would throw away the
+                    order being typed. */}
+                <a
+                  href="/seller/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={user?.shopAddress ? 'link-btn po-deliver-edit' : 'btn btn-secondary btn-small btn-inline po-deliver-edit'}
+                >
+                  {user?.shopAddress ? t('purchase.deliverToEdit') : t('purchase.deliverToAdd')}
+                </a>
+              </div>
+              {user?.shopAddress && <p className="field-hint po-deliver-hint">{t('purchase.deliverToHint')}</p>}
+
+              <div className="field po-supplier-note">
+                <label htmlFor="po-supplier-note">{t('purchase.noteForSupplier')}</label>
+                <textarea
+                  id="po-supplier-note"
+                  rows={2}
+                  maxLength={300}
+                  value={form.notes}
+                  onChange={updateForm('notes')}
+                  placeholder={t('purchase.noteForSupplierPlaceholder')}
+                />
+                <div className="po-note-chips">
+                  {NOTE_CHIPS.map((key) => {
+                    const text = t(`purchase.${key}`);
+                    const on = form.notes.includes(text);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`scan-chip${on ? ' is-on' : ''}`}
+                        aria-pressed={on}
+                        onClick={() => setForm((f) => ({ ...f, notes: toggleNotePhrase(f.notes, text) }))}
+                      >
+                        {on ? <CheckCircleIcon size={11} /> : <PlusIcon size={11} />} {text}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="field-hint">{t('purchase.noteForSupplierHint')}</span>
               </div>
 
               <div className="order-totals">

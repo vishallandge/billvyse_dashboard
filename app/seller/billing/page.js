@@ -461,6 +461,9 @@ export default function SellerBillingPage() {
   const [receipt, setReceipt] = useState(null);
   const [receiptText, setReceiptText] = useState('');
   const [receiptUpiLink, setReceiptUpiLink] = useState(null);
+  // The customer's own no-login link to the bill on screen — printed as a QR on the slip
+  // and copied from the receipt menu. Comes back with the receipt text; see handleCopyBillLink.
+  const [receiptBillLink, setReceiptBillLink] = useState(null);
   const [shareLinks, setShareLinks] = useState(null);
   /**
    * The number, asked for AFTER the money is in the drawer.
@@ -2100,7 +2103,10 @@ export default function SellerBillingPage() {
   }, [cart, customerId]);
 
   useEffect(() => {
-    setLoyaltyPreview(null);
+    // Deliberately does NOT drop `loyaltyPreview` any more — the debounced effect further
+    // down owns it, and re-asks the server whenever the bill's total moves. Clearing it
+    // here left `couponCode` in state, still sent with the bill, while the payable on
+    // screen had quietly stopped counting it.
     setLoyaltyError('');
     // Editing the cart (fixing an over-stock qty, removing an item) clears any stale
     // error banner so a fixed problem doesn't keep showing its old message.
@@ -2234,7 +2240,29 @@ export default function SellerBillingPage() {
   // the whole rupee the shop and the customer will actually settle in. `roundOff` is kept
   // visible as its own line rather than folded silently into the total: a counter that
   // cannot see where 40 paise went does not trust the number above it.
-  const payableBeforeRounding = round2(loyaltyPreview?.payableTotal ?? total);
+  /**
+   * The coupon and the redeemed points, taken off the CURRENT total rather than read as a
+   * finished figure off the preview.
+   *
+   * Reading `loyaltyPreview.payableTotal` was reading an answer to a question that had
+   * since changed. The preview is asked with the total as it stood when the shopkeeper
+   * tapped Apply; then he says "aur pachaas kam kar do" and types a bill discount, and that
+   * stored number no longer describes this bill. The effect below re-asks the server so the
+   * rupee value of a percentage coupon keeps up, but the arithmetic must be right in the
+   * gap too — so the discount is applied here, exactly the way computeBillTotals applies it
+   * on the server: total, less the coupon, less the points, never below zero.
+   *
+   * What it used to do instead was drop the preview whenever the bill discount moved, while
+   * `couponCode` stayed in state and was still sent with the bill. So the screen totalled
+   * ₹950 on a bill the server then wrote at ₹750, and the counter collected the ₹950 and
+   * gave change against it. On a split bill the same gap came out as the server refusing
+   * the sale — "payments add up to more than the amount due" — with nothing on screen to
+   * explain which number was wrong.
+   */
+  const loyaltyReduction = round2(
+    (Number(loyaltyPreview?.couponDiscount) || 0) + (Number(loyaltyPreview?.pointsRedeemedValue) || 0)
+  );
+  const payableBeforeRounding = round2(Math.max(0, total - loyaltyReduction));
   const roundOffEnabled = user?.billingSettings?.roundOff !== false;
   const roundOff = roundOffEnabled && payableBeforeRounding > 0 ? round2(Math.round(payableBeforeRounding) - payableBeforeRounding) : 0;
   const payable = round2(payableBeforeRounding + roundOff);
@@ -2308,6 +2336,51 @@ export default function SellerBillingPage() {
     if (cashExact) setCashReceived((cur) => (cur === next ? cur : next));
     if (paidNowExact) setPaidNow((cur) => (cur === next ? cur : next));
   }, [payable, cashExact, paidNowExact]);
+
+  /**
+   * Keep the coupon and points preview in step with the bill, the same way the offers
+   * preview above keeps up with the cart.
+   *
+   * A coupon is not a fixed number of rupees: a percentage one, a `maxDiscount` cap and a
+   * `minBillAmount` floor all depend on what the bill comes to, and the bill comes to
+   * something different every time a line or a discount moves. The server is the only thing
+   * that knows the answer — and it is also the thing that will REFUSE the bill if the
+   * coupon has stopped qualifying (see createBill), so a stale preview meant the shopkeeper
+   * found out at the moment he pressed Bill.
+   *
+   * Debounced and abortable for the same reason as the offers preview: this fires on every
+   * keystroke in the discount box. A failure leaves the last good preview in place rather
+   * than blanking the discount line — the bill the server writes applies the coupon either
+   * way, and `loyaltyReduction` above is what keeps the screen honest meanwhile.
+   */
+  useEffect(() => {
+    if (!customerId || (!couponCode && !redeemPoints) || !(total > 0)) {
+      setLoyaltyPreview(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      apiFetch('/api/seller/loyalty/preview', {
+        method: 'POST',
+        signal: controller.signal,
+        // Same reason as the offers probe: a shop without the feature must get no discount,
+        // not an upgrade sheet thrown across the counter mid-sale.
+        silentUpgrade: true,
+        body: JSON.stringify({
+          customerId,
+          couponCode: couponCode || undefined,
+          redeemPoints: redeemPoints ? Number(redeemPoints) : undefined,
+          billAmount: total,
+        }),
+      })
+        .then(setLoyaltyPreview)
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [customerId, couponCode, redeemPoints, total]);
 
   // Typing, tapping a note, or clearing is the shopkeeper saying a number themselves —
   // from then on the app must not move it under them. Every writer other than Exact and
@@ -2766,6 +2839,7 @@ export default function SellerBillingPage() {
     setBillOutcome(null);
     setReceiptText('');
     setReceiptUpiLink(null);
+    setReceiptBillLink(null);
     setShareLinks(null);
     resetCapture();
     setProducts((prev) =>
@@ -3220,6 +3294,7 @@ export default function SellerBillingPage() {
       setShareLinks(null);
     resetCapture();
       setReceiptUpiLink(null);
+      setReceiptBillLink(null);
       // The change is owed after the bill exists, so it has to outlive the cart that was
       // cleared to make it. Captured before clearCartAfterBill blanks the tender field.
       setLastTender(
@@ -3230,6 +3305,7 @@ export default function SellerBillingPage() {
         .then((r) => {
           setReceiptText(r.text);
           setReceiptUpiLink(r.upiLink || null);
+          setReceiptBillLink(r.billLink || null);
         })
         .catch(() => {});
       clearCartAfterBill();
@@ -3334,6 +3410,24 @@ export default function SellerBillingPage() {
       appLink: data.appLink,
       endpoint: `/api/seller/bills/${receipt._id}/whatsapp`,
     });
+  }
+
+  /**
+   * Copies the customer's own link to this bill — for a chat that is not WhatsApp, a
+   * WhatsApp Business account on another phone, or an email the cashier is typing.
+   * Usually already in hand from the receipt text; fetched (and minted) if not.
+   */
+  async function handleCopyBillLink() {
+    if (!receipt?._id) return;
+    try {
+      const url = receiptBillLink || (await apiFetch(`/api/seller/bills/${receipt._id}/link`)).url;
+      if (!url) return;
+      setReceiptBillLink(url);
+      await navigator.clipboard.writeText(url);
+      toast.success(t('seller.billLinkCopied'));
+    } catch (err) {
+      toast.error(err?.status ? err.message : t('seller.billLinkCopyFailed'));
+    }
   }
 
   function handlePrint() {
@@ -5199,9 +5293,12 @@ export default function SellerBillingPage() {
                 <button className="btn btn-secondary btn-small" onClick={handlePrint}><PrinterIcon size={15} /> {t('seller.printReceiptAction')}</button>
 
                 <button className="btn btn-secondary btn-small" onClick={handleShare}><WhatsappIcon size={17} /> {t('seller.shareWhatsapp')}</button>
-                {isBluetoothPrintingSupported() && <RowMenu tip={t('common.moreActions')} items={[
-                  { label: t('seller.printBluetooth'), icon: <PrinterIcon size={15} />, onClick: handleBluetoothPrint },
-                ]} />}
+                <RowMenu tip={t('common.moreActions')} items={[
+                  { label: t('seller.copyBillLink'), icon: <CopyIcon size={15} />, onClick: handleCopyBillLink },
+                  ...(isBluetoothPrintingSupported()
+                    ? [{ label: t('seller.printBluetooth'), icon: <PrinterIcon size={15} />, onClick: handleBluetoothPrint }]
+                    : []),
+                ]} />
               </div>
           )}
           </div>
@@ -5355,7 +5452,7 @@ export default function SellerBillingPage() {
               )}
               {capturedName && <p className="bill-capture-done"><CheckCircleIcon size={15} /> {t('seller.captureSaved', { name: capturedName })}</p>}
 
-              <ThermalReceipt receipt={receipt} shop={user} upiLink={receiptUpiLink} t={t} />
+              <ThermalReceipt receipt={receipt} shop={user} upiLink={receiptUpiLink} billLink={receiptBillLink} t={t} />
             </>
           )}
         </div>

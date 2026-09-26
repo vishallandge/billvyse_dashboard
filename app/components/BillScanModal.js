@@ -504,9 +504,11 @@ export default function BillScanModal({ open, onClose, onScanned }) {
       onClose={busy ? undefined : onClose}
       closeOnBackdrop={!busy}
       closeOnEscape={!busy}
-      maxWidth={540}
-      title={t('billScan.title')}
-      hint={busy ? undefined : t('billScan.subtitle')}
+      maxWidth={560}
+      className="bill-scan-modal"
+      overlayClassName="bill-scan-overlay"
+      title={<span className="bill-ai-brand"><span className="bill-ai-spark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z" fill="currentColor" /><path d="m20 1 .8 2.2L23 4l-2.2.8L20 7l-.8-2.2L17 4l2.2-.8L20 1Z" fill="currentColor" /></svg></span><span>{t('billScan.title')}</span></span>}
+      hint={busy ? undefined : <span className="bill-ai-intro"><strong>{t('billScan.captureHeading')}</strong><span>{t('billScan.captureDescription')}</span></span>}
       footer={
         busy ? (
           // Both buttons would be dead here — the read cannot be called back once it has
@@ -515,8 +517,8 @@ export default function BillScanModal({ open, onClose, onScanned }) {
           // The line stops being true the moment the bill is read, but the row must keep
           // its height or the card jumps a centimetre on the way out. A blank of the same
           // height is the honest version of "nothing left to say here".
-          <p className="bill-read-foot">{done ? '\u00a0' : t('billScan.readingKeepOpen')}</p>
-        ) : (
+          <p className="bill-read-foot">{done ? t('billScan.readDoneHint') : t('billScan.readingKeepOpen')}</p>
+        ) : photo ? (
           <>
             <button type="button" className="btn btn-primary btn-inline" disabled={preparing || !photo} onClick={scan}>
               {t('billScan.scan')}
@@ -525,9 +527,19 @@ export default function BillScanModal({ open, onClose, onScanned }) {
               {t('common.cancel')}
             </button>
           </>
-        )
+        ) : null
       }
     >
+      <ol className="bill-flow" aria-label={t('billScan.flowLabel')}>
+        {['capture', 'extract', 'review'].map((step, index) => {
+          const active = done ? 2 : busy ? 1 : 0;
+          return <li key={step} className={index === active ? 'is-current' : index < active ? 'is-complete' : ''} aria-current={index === active ? 'step' : undefined}>
+            <span className="bill-flow-number" aria-hidden="true">{index < active ? <CheckIcon size={13} /> : index + 1}</span>
+            <span>{t('billScan.flow.' + step)}</span>
+          </li>;
+        })}
+      </ol>
+
       {/* What went wrong, and the one thing to do about it. Not a red strip: three of
           the five ways this can fail have an obvious next move, and a sentence with no
           button leaves the shopkeeper holding a bill and a dead dialog. */}
@@ -584,7 +596,13 @@ export default function BillScanModal({ open, onClose, onScanned }) {
               addFiles(e.dataTransfer.files);
             }}
           >
-            <span className="bill-drop-glyph"><UploadIcon size={22} /></span>
+            {!photo && <div className="bill-capture-art" aria-hidden="true">
+              <span className="bill-capture-corner" /><span className="bill-capture-corner" />
+              <span className="bill-capture-corner" /><span className="bill-capture-corner" />
+              <div className="bill-capture-paper"><ReceiptIcon size={28} /><i /><i /><i /><b /></div>
+              <span className="bill-capture-badge"><CheckIcon size={16} /></span>
+            </div>}
+            {!photo && <strong className="bill-drop-title">{t('billScan.captureTitle')}</strong>}
             <p>{photo ? t('billScan.replaceHint') : t('billScan.dropHint')}</p>
             <button
               type="button"
@@ -615,6 +633,7 @@ export default function BillScanModal({ open, onClose, onScanned }) {
               <button
                 type="button"
                 className="icon-btn danger"
+                aria-label={t('common.delete')}
                 data-tip={t('common.delete')}
                 onClick={() => { setPhoto(null); setFault(null); }}
               >
@@ -633,7 +652,7 @@ export default function BillScanModal({ open, onClose, onScanned }) {
           </ul>
 
           <div className="bill-scan-note">
-            <AlertIcon size={14} />
+            <CheckCircleIcon size={16} />
             <span>{t('billScan.reviewPromise')}</span>
           </div>
         </>

@@ -33,6 +33,61 @@ footer{padding:0 20px 24px;text-align:center;color:#8995a8;font-size:11px;letter
 svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:520px){header{padding:22px}main{padding:20px 16px 36px}.card{padding:30px 24px 25px;border-radius:24px}.illustration{width:154px;height:154px;margin-bottom:23px}}
 @media(prefers-reduced-motion:reduce){button{transition:none}}
+/* Compact the layout by viewport height so the card fits laptop and phone screens. */
+body{min-height:100dvh}
+header,footer{flex-shrink:0}
+main{min-height:0}
+@media(max-height:850px){
+  header{padding:16px 24px}
+  main{padding:10px 16px 20px}
+  .card{padding:24px 28px}
+  .illustration{width:128px;height:128px;margin-bottom:16px}
+  .logo{width:84px;height:84px;border-radius:21px}
+  .connection-icon{right:0;bottom:5px;width:38px;height:38px;border-width:4px}
+  h1{font-size:28px;margin:14px 0 10px}
+  .description{margin-bottom:18px;line-height:1.6}
+  .hint{margin-top:12px}
+  .tip{margin-top:16px;padding-top:14px}
+  footer{padding-bottom:14px}
+}
+@media(max-height:700px){
+  header{padding:10px 20px}
+  header img{width:32px;height:32px}
+  main{padding:6px 14px 12px}
+  .card{padding:18px 24px}
+  .illustration{width:94px;height:94px;margin-bottom:10px}
+  .illustration:before{inset:9px}
+  .logo{width:64px;height:64px;padding:5px;border-radius:16px}
+  .connection-icon{right:-5px;bottom:0;width:32px;height:32px;border-width:3px}
+  h1{font-size:25px;margin:10px 0 8px}
+  .description{font-size:13px;line-height:1.5;margin-bottom:14px}
+  .hint{margin-top:9px;min-height:0}
+  .tip{margin-top:10px;padding-top:10px;font-size:11px}
+  footer{padding-bottom:10px}
+}
+@media(max-height:600px){
+  header{padding:8px 20px}
+  main{padding:4px 12px 8px}
+  .card{width:min(100%,620px);padding:16px 22px;display:grid;grid-template-columns:100px minmax(0,1fr);column-gap:20px;align-items:center}
+  .illustration{grid-column:1;grid-row:1 / 6;margin:auto}
+  .badge,h1,.description,button,.hint{grid-column:2}
+  .badge{justify-self:center}
+  h1{font-size:22px;margin:8px 0}
+  .description{font-size:12px;margin-bottom:10px}
+  button{min-height:44px}
+  .hint{font-size:11px}
+  .tip{display:none}
+  footer{padding-bottom:8px}
+}
+@media(max-height:600px) and (max-width:400px){
+  .card{grid-template-columns:60px minmax(0,1fr);column-gap:12px;padding:14px}
+  .illustration{width:60px;height:60px}
+  .logo{width:48px;height:48px}
+  .connection-icon{width:27px;height:27px;right:-6px;bottom:-4px}
+  .badge{font-size:9px;padding:5px 8px}
+  h1{font-size:20px}
+}
+@media(max-height:380px){header,footer{display:none}main{padding:8px 12px}.card{padding:12px 20px}.hint{margin-top:6px}h1{font-size:20px;margin:6px 0}.description{margin-bottom:8px}}
 </style>
 </head>
 <body>
@@ -46,7 +101,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 <span class="badge"><span class="dot"></span> CONNECTION PAUSED</span>
 <h1 id="title">A little pause.<br>We'll be right here.</h1>
 <p class="description">We can't connect to BillVyse right now. Check your internet connection and let's get your dukaan back on track.</p>
-<button id="retry" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17"/></svg><span id="button-label">Try again</span></button>
+<button id="retry" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17"/></svg><span id="button-label">Reconnect</span></button>
 <p class="hint" id="status" role="status" aria-live="polite">We'll automatically try again when<br>your connection returns.</p>
 <div class="tip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 2H9s0-1-1-2Z"/></svg><span>Quick tip: Check your Wi-Fi or mobile data,<br>then give it another try.</span></div>
 </section>
@@ -55,20 +110,54 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 <script>
 const retry = document.getElementById('retry');
 const status = document.getElementById('status');
-function reconnect() {
-  if (retry.disabled) return;
+const label = document.getElementById('button-label');
+let checking = false;
+async function reconnect(manual = false) {
+  if (checking || document.visibilityState === 'hidden') return;
   if (!navigator.onLine) {
-    status.textContent = 'Still offline. Turn on Wi-Fi or mobile data, then try again.';
+    if (manual) status.textContent = 'Still offline. Connect to Wi-Fi or mobile data.';
     return;
   }
+  checking = true;
   retry.disabled = true;
-  document.getElementById('button-label').textContent = 'Reconnecting…';
-  status.textContent = 'Opening your dukaan…';
-  if (location.pathname === '/offline.html') location.replace('/seller');
-  else location.reload();
+  label.textContent = 'Checking connection…';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  try {
+    const target = location.pathname === '/offline.html' ? '/seller' : location.href;
+    // Probe the actual destination, not navigator.onLine (which only detects a network).
+    const response = await fetch(target, {cache: 'no-store', signal: controller.signal});
+    if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) throw new Error('Unavailable');
+    status.textContent = 'Connected. Opening BillVyse…';
+    location.replace(target);
+  } catch {
+    status.textContent = 'Unable to connect yet. We will keep trying automatically.';
+    retry.disabled = false;
+    label.textContent = 'Reconnect';
+    checking = false;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
-retry.addEventListener('click', reconnect);
-window.addEventListener('online', reconnect);
+async function checkForUpdate() {
+  if (!navigator.onLine || !('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.register('/sw.js', {updateViaCache: 'none'});
+    await registration.update();
+  } catch {}
+}
+retry.addEventListener('click', () => reconnect(true));
+window.addEventListener('online', () => { checkForUpdate(); reconnect(); });
+window.addEventListener('focus', () => { checkForUpdate(); reconnect(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { checkForUpdate(); reconnect(); }
+});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}
+setInterval(reconnect, 10000);
+checkForUpdate();
+reconnect();
 </script>
 </body>
 </html>

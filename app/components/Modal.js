@@ -69,6 +69,7 @@ export default function Modal({
   onSubmit,
   noValidate = false,
   className = '',
+  overlayClassName = '',
   labelledBy,
   closeOnBackdrop = true,
   closeOnEscape = true,
@@ -163,7 +164,7 @@ export default function Modal({
   }
 
   return createPortal(
-    <div className="modal-overlay" ref={overlayRef} onMouseDown={onBackdrop}>
+    <div className={`modal-overlay ${overlayClassName}`} ref={overlayRef} onMouseDown={onBackdrop}>
       <Card
         ref={cardRef}
         className={`modal-card modal-fit${className ? ` ${className}` : ''}`}

@@ -13,7 +13,9 @@ import GoogleSignInButton, { GOOGLE_ENABLED } from '../components/GoogleSignInBu
 import AuthLayout from '../components/AuthLayout';
 import AuthField from '../components/AuthField';
 import AddressField from '../components/AddressField';
+import PhoneField from '../components/PhoneField';
 import { addressErrorText } from '../../lib/addressRules';
+import { isIndianMobile } from '../../lib/shopProfileRules';
 
 // The public site, where the policy pages live. Absolute rather than a Next <Link>: the
 // legal pages belong to the storefront app, not the dashboard, and they have to be readable
@@ -61,7 +63,7 @@ export default function RegisterSellerPage() {
     if (match) setLang(match);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [form, setForm] = useState({ name: '', email: '', password: '', shopName: '', shopAddress: '', businessType: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', shopName: '', shopAddress: '', shopPhone: '', businessType: '' });
   const [error, setError] = useState('');
   /**
    * The terms tick. Deliberately its own state and deliberately NOT pre-checked.
@@ -77,6 +79,13 @@ export default function RegisterSellerPage() {
   // on once a step has actually been refused.
   const [addrProblem, setAddrProblem] = useState(null);
   const [showAddrErrors, setShowAddrErrors] = useState(false);
+  /**
+   * The mobile number's own sentence, held back until a step has actually been refused.
+   *
+   * Same rule the address box follows: a red line under a field somebody has not finished
+   * typing into is the form arguing with them. Once they press Next, it stays on.
+   */
+  const [showPhoneError, setShowPhoneError] = useState(false);
   const [loading, setLoading] = useState(false);
   // Shown only when the shop comes back already approved (auto-approve on) — a pending
   // shop can't create products yet (backend 403s), so it skips straight to the dashboard
@@ -115,9 +124,10 @@ export default function RegisterSellerPage() {
   const steps = google ? GOOGLE_STEP_KEYS : STEP_KEYS;
   const lastStep = steps.length - 1;
 
-  // Picks up a credential handed over by the login page. sessionStorage (not local) so
-  // it dies with the tab — an unfinished signup must not leave a usable Google token
-  // sitting on a shared shop computer.
+  // Picks up the profile handed over by the login page. The Google token is NOT here and
+  // must not be: the server parked it in an httpOnly cookie, and this page simply posts the
+  // finished form — the cookie rides along by itself. All that travels through the browser
+  // is a name and an email to prefill the first screen with.
   useEffect(() => {
     let parked;
     try {
@@ -128,8 +138,8 @@ export default function RegisterSellerPage() {
     }
     if (!parked) return;
     try {
-      const { credential, profile } = JSON.parse(parked);
-      if (credential) applyGoogleProfile(credential, profile);
+      const { profile } = JSON.parse(parked);
+      if (profile?.email) applyGoogleProfile(null, profile);
     } catch {
       // Malformed hand-off — fall through to the normal form.
     }
@@ -214,6 +224,14 @@ export default function RegisterSellerPage() {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
 
+  // What is wrong with the number right now, or '' when nothing is. Written once and read
+  // twice — by the step guard, which refuses to move on, and by the box itself.
+  const phoneProblem = !form.shopPhone.trim()
+    ? t('phone.required')
+    : !isIndianMobile(form.shopPhone)
+      ? t('phone.invalid')
+      : '';
+
   // Each step only blocks on what it collects — business type stays fully skippable, and
   // going back never wipes what was already typed on a later step.
   // Validation follows the step's *name*, not its index — the Google flow drops the
@@ -227,6 +245,11 @@ export default function RegisterSellerPage() {
     }
     if (key === 'shop') {
       if (!form.shopName.trim()) return t('register.needShopName');
+      /* Required, unlike the address — this number is the shop's second login (the Mobile
+         tab on the sign-in screen sends a code to it), so a shop created without one has
+         only its password and its Google account to get back in with. The server refuses
+         the sign-up over it too, and a refusal at that point loses the whole form. */
+      if (phoneProblem) return phoneProblem;
       /* The address stays optional here — a wizard that stops on a pincode is a wizard that
          does not finish — but whatever HAS been typed has to be an address, because the
          server refuses the sign-up over it and a refusal at that point loses the whole form.
@@ -242,6 +265,7 @@ export default function RegisterSellerPage() {
     if (err) {
       setError(err);
       if (addrProblem) setShowAddrErrors(true);
+      if (phoneProblem) setShowPhoneError(true);
       return;
     }
     setError('');
@@ -259,21 +283,26 @@ export default function RegisterSellerPage() {
     if (err) {
       setError(err);
       if (addrProblem) setShowAddrErrors(true);
+      if (phoneProblem) setShowPhoneError(true);
       return;
     }
     setError('');
     setLoading(true);
 
     try {
-      // Same wizard, two endpoints. The Google path replays the credential it already
-      // holds — Google ID tokens stay valid about an hour, far longer than filling in a
-      // shop name takes.
+      // Same wizard, two endpoints. On the Google path the credential is sent only when
+      // this page obtained it itself (the Google button pressed right here); when the
+      // hand-off came from the login screen there is nothing to send, and the server reads
+      // the token it parked in its own httpOnly cookie instead.
       const endpoint = google ? '/api/auth/google' : '/api/auth/register';
       const payload = google
         ? {
-            credential: google.credential,
+            ...(google.credential ? { credential: google.credential } : {}),
             shopName: form.shopName,
             shopAddress: form.shopAddress,
+            // Carried on the Google path too. Google proves an email address and nothing
+            // else, so this is the only mobile number that account will ever have.
+            shopPhone: form.shopPhone,
             businessType: form.businessType,
             acceptTerms,
             referralCode,
@@ -612,6 +641,23 @@ export default function RegisterSellerPage() {
                   required
                   autoFocus
                 />
+                {/* Asked for here rather than left to Settings, because it is the second
+                    door into this account: the login screen's Mobile tab sends a code to
+                    this number and knows an account by nothing else. A shop that skipped it
+                    was told, on its own login screen, that no shop is registered with its
+                    own number. The hint says so out loud — a mobile box on a signup form
+                    otherwise reads as one more thing being collected about you. */}
+                <PhoneField
+                  id="shopPhone"
+                  variant="auth"
+                  label={t('register.mobile')}
+                  hint={t('register.mobileHint')}
+                  value={form.shopPhone}
+                  onChange={(next) => setForm((f) => ({ ...f, shopPhone: next }))}
+                  error={showPhoneError ? phoneProblem : ''}
+                  autoComplete="tel"
+                  required
+                />
                 {/* Optional here, as it always was — a signup that stops on a pincode is a
                     signup that does not finish. But the shopkeeper is standing in the shop
                     while they fill this, so one tap on the location button writes down more
@@ -645,6 +691,13 @@ export default function RegisterSellerPage() {
                     {t('register.termsSuffix')}
                   </span>
                 </label>
+                {/* Outside the label, on purpose.
+                    Inside it, a tap anywhere on these two lines would toggle the tick — so a
+                    shopkeeper reading what is being collected would find himself agreeing to
+                    it by reading, which is the opposite of what a notice is for. It sits
+                    under the tick rather than above because the tick is what the eye lands on
+                    and this is what it should then explain. */}
+                <p className="auth-consent-note">{t('register.consentNote')}</p>
               </>
             )}
 
