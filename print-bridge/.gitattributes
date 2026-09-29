@@ -1,0 +1,6 @@
+# The server runs make-zip.sh with bash and a Mac runs the .command file: both need LF.
+# Windows cmd wants CRLF in .bat files.
+*.sh text eol=lf
+*.command text eol=lf
+*.js text eol=lf
+*.bat text eol=crlf

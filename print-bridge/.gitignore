@@ -1,0 +1,7 @@
+# Built downloads — made on the server by make-zip.sh, never committed.
+*.exe
+*.zip
+*.blob
+sea-config.json
+billvyse-print-bridge-mac
+billvyse-print-bridge-linux

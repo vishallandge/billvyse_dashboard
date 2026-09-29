@@ -1,0 +1,15 @@
+{
+  "name": "billvyse-print-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lets the BillVyse website print to WiFi/LAN receipt printers from a shop computer.",
+  "main": "bridge.js",
+  "bin": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js",
+    "build:exe": "node build-exe.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
