@@ -22,8 +22,11 @@ const http = require('http');
 const net = require('net');
 const dgram = require('dgram');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const { execFile, spawn } = require('child_process');
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const PORT = Number(process.env.BV_BRIDGE_PORT) || 17777;
 const MAX_BODY = 8 * 1024 * 1024;
 
@@ -246,6 +249,260 @@ async function printerName(host) {
   return cleanName(await snmpAsk(host, OID_DEVICE_DESCR, 700)) || cleanName(await snmpAsk(host, OID_SYS_DESCR, 700));
 }
 
+// ------------------------------------------------------------ Windows printers ---
+// A USB printer with its Windows driver installed (Epson TM-T82X, TVS RP3160…) belongs to
+// Windows: no browser may open it. But Windows will pass bytes through untouched to any
+// installed printer as a RAW print job — the same route POS software has always used. So
+// the bridge hands the job to the Windows spooler by printer NAME, and only a name that is
+// actually installed on this computer is accepted.
+
+// Queues that are not real printers — never offered, never printed to.
+const VIRTUAL_PRINTERS = /microsoft print to pdf|microsoft xps|onenote|fax|send to|adobe pdf|pdf24|cutepdf|anydesk|teamviewer/i;
+
+function powershell(script, env, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { env: { ...process.env, ...env }, timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => (err ? reject(new Error(String(stderr || err.message).trim().split('\n').pop())) : resolve(stdout))
+    );
+  });
+}
+
+// A real, common trap: the driver installer puts a USB receipt printer on COM3 or LPT1.
+// Windows accepts every job, the port swallows it, and nothing prints — with no error
+// anywhere. So each printer on a serial/parallel/file port is checked against the USB
+// ports that exist: if a USB port of the same brand sits unused, that is where it belongs.
+const NOT_REAL_PORT = /^(COM\d+|LPT\d+|FILE|nul|PORTPROMPT):?$/i;
+
+function brandOf(text) {
+  const match = String(text || '').toUpperCase().match(/EPSON|TVS|RUGTEK|RETSOL|EVERYCOM|XPRINTER|STAR|BIXOLON|CITIZEN|SNBC|POSIFLEX|TSC|ZEBRA|HONEYWELL|SEWOO|RONGTA|GOOJPRT|HOIN|SUNMI|POS/);
+  return match ? match[0] : null;
+}
+
+// The list is asked for on every print to validate the name; a PowerShell round trip costs
+// a second, so it is remembered briefly. A printer installed a moment ago shows up within
+// 30 seconds, and the settings screen always asks fresh (fresh = true).
+let printerCache = { at: 0, list: null };
+
+async function windowsPrinters(fresh = true) {
+  if (process.platform !== 'win32') return [];
+  if (!fresh && printerCache.list && Date.now() - printerCache.at < 30000) return printerCache.list;
+  const list = await readWindowsPrinters();
+  printerCache = { at: Date.now(), list };
+  return list;
+}
+
+async function readWindowsPrinters() {
+  const out = await powershell(
+    "$p = @(Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,WorkOffline); " +
+      "$o = @(Get-PrinterPort -ErrorAction SilentlyContinue | Select-Object Name,Description); " +
+      "@{ printers = $p; ports = $o } | ConvertTo-Json -Compress -Depth 3"
+  );
+  const parsed = out.trim() ? JSON.parse(out) : {};
+  const all = [].concat(parsed.printers || []).filter((p) => p && p.Name);
+  const ports = [].concat(parsed.ports || []).filter((p) => p && p.Name);
+  const usedPorts = new Set(all.map((p) => String(p.PortName || '').toUpperCase()));
+  const freeUsb = ports.filter((port) => /^(USB|TMUSB)/i.test(port.Name) && !usedPorts.has(String(port.Name).toUpperCase()));
+
+  return all
+    .filter((p) => !VIRTUAL_PRINTERS.test(`${p.Name} ${p.DriverName}`))
+    .map((p) => {
+      const entry = { name: String(p.Name), driver: String(p.DriverName || ''), port: String(p.PortName || ''), offline: Boolean(p.WorkOffline) };
+      if (NOT_REAL_PORT.test(entry.port)) {
+        const brand = brandOf(`${entry.name} ${entry.driver}`);
+        const sameBrand = brand ? freeUsb.filter((port) => brandOf(port.Description) === brand) : [];
+        const pick = sameBrand.length === 1 ? sameBrand[0] : freeUsb.length === 1 ? freeUsb[0] : null;
+        if (pick) entry.suggestPort = String(pick.Name);
+      }
+      return entry;
+    });
+}
+
+// Moves a printer onto the USB port the check above suggested — and only that port.
+async function fixWindowsPort(printer) {
+  const target = (await windowsPrinters()).find((p) => p.name === printer);
+  if (!target) throw Object.assign(new Error('Printer is not installed on this computer'), { status: 404, code: 'printer-unreachable' });
+  if (!target.suggestPort) throw Object.assign(new Error('Nothing to fix'), { status: 409, code: 'nothing-to-fix' });
+  try {
+    await powershell('Set-Printer -Name $env:BV_PRINTER -PortName $env:BV_PORT', { BV_PRINTER: target.name, BV_PORT: target.suggestPort });
+  } catch (err) {
+    // Some PCs only let an administrator change a printer's port.
+    throw Object.assign(new Error(err.message), { status: 403, code: 'permission' });
+  }
+  printerCache = { at: 0, list: null };
+  return target.suggestPort;
+}
+
+// One PowerShell stays running with the spooler code compiled once. Starting PowerShell and
+// compiling that code took ~2-4 seconds PER BILL, long enough that cashiers pressed Print
+// again and got two or three slips a few seconds later. Jobs now go down a pipe to the
+// already-warm worker and reach the printer in well under a second.
+//
+// Protocol, one line each way: "<id>\t<printer name, base64>\t<job file path>" in,
+// "<id>\tOK" or "<id>\tERR\t<message>" out. The name is base64, so no printer name, however
+// odd, can break a line or reach the script as code.
+const WORKER_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class BvRawPrint {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public class DOCINFO { public string pDocName; public string pOutputFile; public string pDataType; }
+  [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool OpenPrinter(string name, out IntPtr h, IntPtr d);
+  [DllImport("winspool.drv", SetLastError = true)] public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)] public static extern int StartDocPrinter(IntPtr h, int level, DOCINFO di);
+  [DllImport("winspool.drv", SetLastError = true)] public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError = true)] public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError = true)] public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError = true)] public static extern bool WritePrinter(IntPtr h, byte[] b, int n, out int written);
+  public static void Send(string printer, byte[] data) {
+    IntPtr h;
+    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("OpenPrinter failed: " + Marshal.GetLastWin32Error());
+    try {
+      DOCINFO di = new DOCINFO(); di.pDocName = "BillVyse"; di.pDataType = "RAW";
+      if (StartDocPrinter(h, 1, di) == 0) throw new Exception("StartDocPrinter failed: " + Marshal.GetLastWin32Error());
+      try {
+        StartPagePrinter(h);
+        int written;
+        if (!WritePrinter(h, data, data.Length, out written) || written != data.Length) throw new Exception("WritePrinter failed: " + Marshal.GetLastWin32Error());
+        EndPagePrinter(h);
+      } finally { EndDocPrinter(h); }
+    } finally { ClosePrinter(h); }
+  }
+}
+"@
+[Console]::Out.WriteLine("READY"); [Console]::Out.Flush()
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($line -eq $null) { break }
+  $parts = $line.Split([char]9)
+  if ($parts.Length -lt 3) { continue }
+  try {
+    $name = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parts[1]))
+    [BvRawPrint]::Send($name, [System.IO.File]::ReadAllBytes($parts[2]))
+    [Console]::Out.WriteLine($parts[0] + [char]9 + "OK")
+  } catch {
+    $msg = ($_.Exception.Message -replace "[\\r\\n\\t]", " ")
+    [Console]::Out.WriteLine($parts[0] + [char]9 + "ERR" + [char]9 + $msg)
+  }
+  [Console]::Out.Flush()
+}
+`;
+
+let worker = null;
+
+function startWorker() {
+  const scriptFile = path.join(os.tmpdir(), `billvyse-print-worker-${process.pid}.ps1`);
+  fs.writeFileSync(scriptFile, WORKER_SCRIPT);
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile], {
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const state = { child, pending: new Map(), seq: 0, buffer: '' };
+  state.ready = new Promise((resolve, reject) => {
+    state.onReady = resolve;
+    state.onFail = reject;
+  });
+  state.ready.catch(() => {});
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    state.buffer += chunk;
+    let at;
+    while ((at = state.buffer.indexOf('\n')) >= 0) {
+      const line = state.buffer.slice(0, at).replace(/\r$/, '');
+      state.buffer = state.buffer.slice(at + 1);
+      if (line === 'READY') {
+        state.onReady();
+        continue;
+      }
+      const [id, status, message] = line.split('\t');
+      const job = state.pending.get(id);
+      if (!job) continue;
+      state.pending.delete(id);
+      clearTimeout(job.timer);
+      if (status === 'OK') job.resolve();
+      else job.reject(new Error(message || 'print failed'));
+    }
+  });
+  child.stderr.on('data', () => {});
+  child.on('error', () => child.emit('exit'));
+  child.on('exit', () => {
+    if (worker === state) worker = null;
+    state.onFail(new Error('print worker stopped'));
+    state.pending.forEach((job) => {
+      clearTimeout(job.timer);
+      job.reject(new Error('print worker stopped'));
+    });
+    state.pending.clear();
+    fs.unlink(scriptFile, () => {});
+  });
+  return state;
+}
+
+function getWorker() {
+  if (!worker) worker = startWorker();
+  return worker;
+}
+
+async function spoolRaw(printer, file) {
+  const state = getWorker();
+  let startTimer;
+  try {
+    await Promise.race([
+      state.ready,
+      new Promise((_, reject) => {
+        startTimer = setTimeout(() => reject(new Error('print worker did not start')), 30000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(startTimer);
+  }
+  return new Promise((resolve, reject) => {
+    state.seq += 1;
+    const id = String(state.seq);
+    // A spooler call that never returns would block every later bill; after 30s the
+    // worker is replaced and this job is reported failed.
+    const timer = setTimeout(() => {
+      state.pending.delete(id);
+      reject(new Error('Printer did not respond'));
+      state.child.kill();
+    }, 30000);
+    state.pending.set(id, { resolve, reject, timer });
+    state.child.stdin.write(`${id}\t${Buffer.from(printer, 'utf8').toString('base64')}\t${file}\n`);
+  });
+}
+
+async function windowsPrint(printer, data) {
+  const installed = await windowsPrinters(false);
+  if (!installed.some((p) => p.name === printer)) {
+    throw Object.assign(new Error('Printer is not installed on this computer'), { status: 404, code: 'printer-unreachable' });
+  }
+  const file = path.join(os.tmpdir(), `billvyse-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.bin`);
+  fs.writeFileSync(file, data);
+  try {
+    await spoolRaw(printer, file);
+  } catch (err) {
+    throw Object.assign(new Error(err.message), { status: 502, code: 'printer-unreachable' });
+  } finally {
+    fs.unlink(file, () => {});
+  }
+}
+
+// Warm the worker at start-up, so even the first bill of the day is instant.
+if (process.platform === 'win32') {
+  setTimeout(() => {
+    try {
+      getWorker();
+    } catch {
+      // retried on the first print
+    }
+  }, 500);
+}
+
 function localSubnets() {
   const bases = new Set();
   Object.values(os.networkInterfaces()).forEach((list) => {
@@ -310,17 +567,28 @@ const server = http.createServer(async (req, res) => {
     send(res, 204, undefined, origin);
     return;
   }
-  const path = (req.url || '').split('?')[0];
+  const route = (req.url || '').split('?')[0];
   try {
-    if (req.method === 'GET' && path === '/status') {
+    if (req.method === 'GET' && route === '/status') {
       send(res, 200, { ok: true, name: 'BillVyse Print Bridge', version: VERSION }, origin);
-    } else if (req.method === 'POST' && path === '/scan') {
+    } else if (req.method === 'POST' && route === '/scan') {
       send(res, 200, { printers: await scan() }, origin);
-    } else if (req.method === 'POST' && path === '/probe') {
+    } else if (req.method === 'POST' && route === '/probe') {
       const { host, port } = target(await readJson(req));
       if (await knock(host, port, 3000)) send(res, 200, { ok: true, name: await printerName(host) }, origin);
       else send(res, 502, { error: 'Printer did not answer', code: 'printer-unreachable' }, origin);
-    } else if (req.method === 'POST' && path === '/print') {
+    } else if (req.method === 'GET' && route === '/win/printers') {
+      send(res, 200, { printers: await windowsPrinters() }, origin);
+    } else if (req.method === 'POST' && route === '/win/fix-port') {
+      const body = await readJson(req);
+      send(res, 200, { ok: true, port: await fixWindowsPort(String(body.printer || '')) }, origin);
+    } else if (req.method === 'POST' && route === '/win/print') {
+      const body = await readJson(req);
+      const data = Buffer.from(String(body.data || ''), 'base64');
+      if (!data.length) throw Object.assign(new Error('Nothing to print'), { status: 400 });
+      await windowsPrint(String(body.printer || ''), data);
+      send(res, 200, { ok: true }, origin);
+    } else if (req.method === 'POST' && route === '/print') {
       const body = await readJson(req);
       const { host, port } = target(body);
       const data = Buffer.from(String(body.data || ''), 'base64');
@@ -334,6 +602,11 @@ const server = http.createServer(async (req, res) => {
     send(res, err.status || 500, { error: err.message, code: err.code }, origin);
   }
 });
+
+// It runs hidden, for days, on a shop PC: one bad printer response must never take the
+// whole bridge down. Log it and keep serving.
+process.on('uncaughtException', (err) => console.error('[bridge] unexpected error:', err?.message || err));
+process.on('unhandledRejection', (err) => console.error('[bridge] unexpected error:', err?.message || err));
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {

@@ -1066,6 +1066,7 @@ export default function TablesPage() {
     // printer), otherwise the Print screen.
     requestAnimationFrame(() => {
       printSlip({
+        shop: user,
         role: 'kot',
         selector: '.kot-ticket',
         bodyClass: 'printing-kot',
@@ -1077,6 +1078,7 @@ export default function TablesPage() {
 
   function handlePrintReceipt() {
     printSlip({
+      shop: user,
       role: 'receipt',
       selector: '.thermal-receipt',
       bodyClass: 'printing-receipt',

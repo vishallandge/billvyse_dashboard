@@ -3445,6 +3445,7 @@ export default function SellerBillingPage() {
    */
   function handlePrint() {
     return printSlip({
+      shop: user,
       role: 'receipt',
       selector: '.thermal-receipt',
       bodyClass: 'printing-receipt',
@@ -3464,6 +3465,7 @@ export default function SellerBillingPage() {
     if (!getPrinterSettings().autoPrint || !getRolePrinter('receipt')) return;
     setTimeout(() => {
       printSlip({
+        shop: user,
         role: 'receipt',
         selector: '.thermal-receipt',
         bodyClass: 'printing-receipt',
@@ -3490,6 +3492,7 @@ export default function SellerBillingPage() {
     }));
     requestAnimationFrame(() => {
       printSlip({
+        shop: user,
         role: 'kot',
         selector: '.kot-ticket',
         bodyClass: 'printing-kot',

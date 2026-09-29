@@ -231,7 +231,8 @@ function ReferralQr({ link, size = 172 }) {
     if (!link) return undefined;
     let active = true;
     import('qrcode')
-      .then((QRCode) => QRCode.toDataURL(link, { width: size, margin: 1 }))
+      // Drawn larger than shown so it stays sharp when shared, zoomed or printed.
+      .then((QRCode) => QRCode.toDataURL(link, { width: Math.max(512, size * 3), margin: 1 }))
       .then((url) => active && setDataUrl(url))
       .catch(() => {});
     return () => {

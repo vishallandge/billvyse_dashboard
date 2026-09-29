@@ -1,7 +1,13 @@
 @echo off
-rem Adds a shortcut to the Startup folder so the Print Bridge starts minimised at every login.
-set "TARGET=%~dp0Start Print Bridge.bat"
+title BillVyse Print Bridge - setup
+rem One double-click: the bridge starts now, in the background, and again by itself at
+rem every Windows login. No window stays open.
+set "LAUNCHER=%~dp0Print Bridge (background).vbs"
 set "LINK=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\BillVyse Print Bridge.lnk"
-powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:LINK); $s.TargetPath=$env:TARGET; $s.WorkingDirectory='%~dp0'; $s.WindowStyle=7; $s.Save()"
-echo BillVyse Print Bridge will now start by itself when Windows starts.
+powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:LINK); $s.TargetPath='wscript.exe'; $s.Arguments='\"' + $env:LAUNCHER + '\"'; $s.WorkingDirectory='%~dp0'; $s.Save()"
+wscript.exe "%LAUNCHER%"
+echo.
+echo  BillVyse Print Bridge chalu ho gaya, aur ab computer on hote hi apne aap chalega.
+echo  Ye window band kar sakte ho.
+echo.
 pause

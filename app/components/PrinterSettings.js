@@ -8,17 +8,29 @@ import Modal from './Modal';
 import Switch from './Switch';
 import { PrinterIcon, TrashIcon, SettingsIcon, RefreshIcon, CheckCircleIcon, AlertIcon, SpinnerIcon } from './Icons';
 import usePrinters from '../../lib/printer/usePrinters';
+import { shopPaper } from '../../lib/printer/slip';
+import { useDashboardUser } from './DashboardShell';
 import {
   connect,
   disconnect,
   errorKey,
   forgetPrinter,
   openBridgePrinter,
+  openWindowsPrinter,
   openNativeDevice,
   pickWebPrinter,
   printTest,
   savePrinter,
   setAutoPrint,
+  setTextScale,
+  setCompact,
+  setBillQr,
+  stepWidth,
+  getRolePrinter,
+  printerDots,
+  TEXT_SCALE_DEFAULT,
+  TEXT_SCALE_MIN,
+  TEXT_SCALE_MAX,
   setRole,
   updatePrinter,
   getPrinter,
@@ -26,7 +38,8 @@ import {
   ROLES,
 } from '../../lib/printer';
 import { cleanName, shortAddress } from '../../lib/printer/names';
-import { webSupport, isChooserCancel, bridgeAvailable, bridgeScan } from '../../lib/printer/webTransports';
+import { rasterizeElement } from '../../lib/printer/raster';
+import { webSupport, isChooserCancel, bridgeAvailable, bridgeScan, bridgeWindowsPrinters, bridgeFixWindowsPort } from '../../lib/printer/webTransports';
 import { isNativeShell, nativePrinter, nativeScan, nativeSupport } from '../../lib/printer/nativeTransport';
 
 /**
@@ -54,7 +67,7 @@ function transportLabel(record, t) {
   if (record.transport === 'native') {
     return t({ bt: 'printer.viaBluetooth', ble: 'printer.viaBluetooth', usb: 'printer.viaUsb', net: 'printer.viaWifi' }[record.nativeKind] || 'printer.viaBluetooth');
   }
-  return t({ ble: 'printer.viaBluetooth', serial: 'printer.viaSerial', usb: 'printer.viaUsb', network: 'printer.viaWifi' }[record.transport] || 'printer.viaUsb');
+  return t({ ble: 'printer.viaBluetooth', serial: 'printer.viaSerial', usb: 'printer.viaUsb', network: 'printer.viaWifi', winspool: 'printer.viaWindows' }[record.transport] || 'printer.viaUsb');
 }
 
 export function StatusBadge({ status, t }) {
@@ -136,6 +149,14 @@ export default function PrinterSettings() {
                     {roles.length > 0 && ` · ${roles.map((role) => t(ROLE_LABEL[role])).join(', ')}`}
                   </small>
                   {status.state === 'error' && status.code && <small className="printer-row-error">{t(errorKey({ code: status.code }))}</small>}
+                  {/* A USB printer that Windows' driver owns can never be opened by the browser;
+                      the one real fix is the Windows route. One click swaps this record for it. */}
+                  {status.code === 'usb-busy' && record.transport === 'usb' && (
+                    <button type="button" className="btn btn-primary btn-small btn-inline printer-fix-btn"
+                      onClick={async () => { await forgetPrinter(record.id); setAdding('windows'); }}>
+                      {t('printer.fixViaWindows')}
+                    </button>
+                  )}
                 </div>
                 <div className="printer-row-actions">
                   {isOn ? (
@@ -181,9 +202,27 @@ export default function PrinterSettings() {
         </span>
       </div>
 
+      <SlipTextSize settings={settings} />
+
+      {/* Paper savers. Both apply to direct printing and to the Print screen. */}
+      <div className="printer-auto">
+        <Switch checked={settings.compact !== false} onChange={(on) => setCompact(on)} label={t('printer.compactSlip')} id="printer-compact" />
+        <span>
+          <strong>{t('printer.compactSlip')}</strong>
+          <small>{t('printer.compactSlipHint')}</small>
+        </span>
+      </div>
+      <div className="printer-auto">
+        <Switch checked={settings.billQr !== false} onChange={(on) => setBillQr(on)} label={t('printer.billQr')} id="printer-bill-qr" />
+        <span>
+          <strong>{t('printer.billQr')}</strong>
+          <small>{t('printer.billQrHint')}</small>
+        </span>
+      </div>
+
       <p className="section-note printer-system-note">{t('printer.systemNote')}</p>
 
-      {adding && <AddPrinterModal onClose={() => setAdding(false)} />}
+      {adding && <AddPrinterModal startWindows={adding === 'windows'} onClose={() => setAdding(false)} />}
       {editingId && getPrinter(editingId) && (
         <Modal onClose={() => setEditingId(null)} title={t('printer.settingsTitle')} maxWidth={520}
           footer={<button type="button" className="btn btn-primary btn-inline" onClick={() => setEditingId(null)}>{t('printer.done')}</button>}>
@@ -194,16 +233,166 @@ export default function PrinterSettings() {
   );
 }
 
+// ------------------------------------------------------------ slip text size ---
+
+/**
+ * The slip's text size, chosen by looking — not by guessing from a label.
+ *
+ * The preview is not a mock-up: it is the same snapshot the printer receives
+ * (rasterizeElement at the bill printer's own width, same compact spacing), shown in black
+ * and white on a paper-coloured strip, with how much roll one bill of that size uses. The
+ * size is only kept when the shopkeeper presses Save; "Test print" sends the unsaved size
+ * to the printer so it can be judged on real paper first.
+ */
+function SlipTextSize({ settings }) {
+  const { t } = useLanguage();
+  const toast = useToast();
+  const user = useDashboardUser();
+  const saved = settings.textScale || TEXT_SCALE_DEFAULT;
+  const [scale, setScale] = useState(saved);
+  const [preview, setPreview] = useState(null); // { url, cm }
+  const [testing, setTesting] = useState(false);
+  const canvasRef = useRef(null);
+  const printer = getRolePrinter('receipt');
+  const printerId = printer?.id;
+  const dots = printer ? printerDots(printer) : 576;
+  // Epson TM heads are 180 dpi (7.09 dots/mm); nearly everything else is 203 dpi (8).
+  const dotsPerMm = printer && /EPSON|\bTM-/i.test(printer.name) ? 7.09 : 8;
+
+  useEffect(() => setScale(saved), [saved]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const sample = document.createElement('div');
+      sample.className = 'thermal-receipt';
+      sample.innerHTML = sampleReceiptHtml(user?.shopName || 'BillVyse');
+      try {
+        const bitmap = await rasterizeElement(sample, { widthDots: dots, scale, compact: settings.compact !== false });
+        if (cancelled || !canvasRef.current) return;
+        const canvas = canvasRef.current;
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        const image = ctx.createImageData(bitmap.width, bitmap.height);
+        for (let y = 0; y < bitmap.height; y += 1) {
+          for (let x = 0; x < bitmap.width; x += 1) {
+            const on = bitmap.data[y * bitmap.bytesPerRow + (x >> 3)] & (0x80 >> (x & 7));
+            const i = (y * bitmap.width + x) * 4;
+            const v = on ? 20 : 255;
+            image.data[i] = v;
+            image.data[i + 1] = v;
+            image.data[i + 2] = v;
+            image.data[i + 3] = 255;
+          }
+        }
+        ctx.putImageData(image, 0, 0);
+        setPreview({ cm: (bitmap.height / dotsPerMm / 10).toFixed(1) });
+      } catch {
+        if (!cancelled) setPreview(null);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scale, dots, dotsPerMm, settings.compact, user?.shopName]);
+
+  const step = (delta) => setScale((current) => Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, Math.round((current + delta) * 10) / 10)));
+  const dirty = Math.abs(scale - saved) > 0.001;
+
+  async function testThisSize() {
+    if (!printerId) return;
+    setTesting(true);
+    try {
+      await printTest(printerId, { scale });
+      toast.success(t('printer.testSent'));
+    } catch (err) {
+      toast.error(t(errorKey(err)));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="field printer-text-size">
+      <label>{t('printer.textSize')}</label>
+      <div className="printer-size-row">
+        <div className="printer-stepper" role="group" aria-label={t('printer.textSize')}>
+          <button type="button" onClick={() => step(-0.1)} disabled={scale <= TEXT_SCALE_MIN} aria-label="−">−</button>
+          <output>{Math.round(scale * 100)}%</output>
+          <button type="button" onClick={() => step(0.1)} disabled={scale >= TEXT_SCALE_MAX} aria-label="+">+</button>
+        </div>
+        <input type="range" min={TEXT_SCALE_MIN} max={TEXT_SCALE_MAX} step="0.1" value={scale}
+          onChange={(event) => setScale(Number(event.target.value))} aria-label={t('printer.textSize')} />
+      </div>
+
+      <div className="printer-preview">
+        <div className="printer-preview-paper">
+          <canvas ref={canvasRef} />
+        </div>
+        <small className="field-hint">
+          {preview ? t('printer.previewPaper', { cm: preview.cm }) : t('printer.previewLoading')}
+        </small>
+      </div>
+
+      <div className="printer-size-actions">
+        <button type="button" className="btn btn-primary btn-small btn-inline" disabled={!dirty}
+          onClick={() => { setTextScale(scale); toast.success(t('printer.textSizeSaved')); }}>
+          {t('printer.textSizeSave')}
+        </button>
+        {printerId && (
+          <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={testThisSize} disabled={testing}>
+            {testing ? <SpinnerIcon size={14} /> : <PrinterIcon size={15} />} {t('printer.testThisSize')}
+          </button>
+        )}
+        {dirty && (
+          <button type="button" className="link-btn" onClick={() => setScale(saved)}>{t('printer.textSizeReset')}</button>
+        )}
+      </div>
+      <small className="field-hint">{t('printer.textSizeHint')}</small>
+    </div>
+  );
+}
+
+// A typical three-line bill, in the receipt's own classes, for the preview.
+function sampleReceiptHtml(shopName) {
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const row = (name, sub, amt) =>
+    `<div class="tr-item"><div class="tr-name"><div class="tr-item-name">${name}</div><div class="tr-item-sub">${sub}</div></div><span class="tr-amt">${amt}</span></div>`;
+  return `
+    <div class="tr-head"><div class="tr-shop">${esc(shopName)}</div><div class="tr-line">MG Road · Ph: 98765 43210</div></div>
+    <div class="tr-rule"></div>
+    <div class="tr-meta"><span>Bill #1042</span><span>29/09/2026 · 06:15 pm</span></div>
+    <div class="tr-rule"></div>
+    <div class="tr-items">
+      ${row('आशीर्वाद आटा 5kg', '1 × ₹245.00', '₹245.00')}
+      ${row('Tata Salt 1kg', '2 × ₹28.00', '₹56.00')}
+      ${row('Amul Butter 100g', '1 × ₹58.00', '₹58.00')}
+    </div>
+    <div class="tr-rule"></div>
+    <div class="tr-totals"><div class="tr-grand"><span>Total</span><span>₹359.00</span></div><div class="tr-mode">Cash</div></div>
+    <div class="tr-rule tr-dashed"></div>
+    <div class="tr-foot"><div class="tr-thanks">धन्यवाद! फिर आइएगा</div></div>`;
+}
+
 // ------------------------------------------------------------------ add a printer ---
 
-function AddPrinterModal({ onClose }) {
+function AddPrinterModal({ onClose, startWindows = false }) {
   const { t } = useLanguage();
+  // The roll the shop chose in Settings → Invoice look: a new printer starts on that width
+  // unless its own name says otherwise ("…80…", "…58…").
+  const shopRoll = shopPaper(useDashboardUser());
   const toast = useToast();
   const native = isNativeShell();
   const web = useMemo(() => webSupport(), []);
   const [support, setSupport] = useState(null); // native capabilities
-  const [step, setStep] = useState('choose');
-  const [kind, setKind] = useState(null); // 'bluetooth' | 'usb' | 'wifi'
+  const [step, setStep] = useState(startWindows ? 'find' : 'choose');
+  const [kind, setKind] = useState(startWindows ? 'usb' : null); // 'bluetooth' | 'usb' | 'wifi'
+  // Set when the browser-USB route hit a printer Windows owns: we go straight to the
+  // Windows route instead of leaving the person at an error.
+  const [windowsRoute, setWindowsRoute] = useState(startWindows);
+  const [note, setNote] = useState(startWindows ? 'printer.usbBusySwitch' : null);
   const [savedId, setSavedId] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -223,11 +412,21 @@ function AddPrinterModal({ onClose }) {
     setError(null);
     try {
       const { record, handle } = await promise;
+      // Only when the printer's own name said nothing: "EPSON TM-T82X" is an 80mm printer
+      // whatever the invoice setting says.
+      if (shopRoll.roll && record.paperGuessed && record.lang !== 'tspl') record.paperMm = shopRoll.widthMm;
       savePrinter(record, { handle });
       setSavedId(record.id);
       setStep('setup');
     } catch (err) {
-      if (!isChooserCancel(err)) setError(t(errorKey(err)));
+      if (err?.code === 'usb-busy' && !native && /Windows/i.test(navigator.userAgent)) {
+        setWindowsRoute(true);
+        setKind('usb');
+        setStep('find');
+        setNote('printer.usbBusySwitch');
+      } else if (!isChooserCancel(err)) {
+        setError(t(errorKey(err)));
+      }
     } finally {
       setBusy(false);
     }
@@ -255,7 +454,7 @@ function AddPrinterModal({ onClose }) {
         <button type="button" className="btn btn-secondary btn-inline" onClick={close}>{t('common.cancel')}</button>
       </>
     ) : step === 'find' ? (
-      <button type="button" className="btn btn-secondary btn-inline" onClick={() => { setStep('choose'); setError(null); }}>{t('printer.back')}</button>
+      <button type="button" className="btn btn-secondary btn-inline" onClick={() => { setStep('choose'); setError(null); setNote(null); setWindowsRoute(false); }}>{t('printer.back')}</button>
     ) : (
       <button type="button" className="btn btn-secondary btn-inline" onClick={close}>{t('common.cancel')}</button>
     );
@@ -281,7 +480,10 @@ function AddPrinterModal({ onClose }) {
       )}
 
       {step === 'find' && native && <NativeFinder kind={kind} support={support} busy={busy} onPick={(device) => adopt(openNativeDevice(device))} />}
-      {step === 'find' && !native && <WebFinder kind={kind} web={web} busy={busy} onPick={(source) => adopt(source)} />}
+      {step === 'find' && note && <div className="info-banner printer-note">{t(note)}</div>}
+      {step === 'find' && !native && (
+        <WebFinder key={windowsRoute ? 'windows' : 'normal'} kind={kind} web={web} busy={busy} forceWindows={windowsRoute} onPick={(source) => adopt(source)} />
+      )}
 
       {step === 'setup' && savedId && <PrinterSetupForm id={savedId} firstRun />}
 
@@ -456,8 +658,9 @@ function IpForm({ ip, setIp, busy, onSubmit }) {
 
 // ------------------------------------------------------------ browser: choosers ---
 
-function WebFinder({ kind, web, busy, onPick }) {
+function WebFinder({ kind, web, busy, onPick, forceWindows = false }) {
   const { t } = useLanguage();
+  const [usbMode, setUsbMode] = useState(forceWindows ? 'windows' : null); // 'windows' once that route is chosen
   const [bridge, setBridge] = useState('checking');
   const [found, setFound] = useState([]);
   const [scanning, setScanning] = useState(false);
@@ -512,9 +715,22 @@ function WebFinder({ kind, web, busy, onPick }) {
     );
   }
 
+  if (kind === 'usb' && usbMode === 'windows') {
+    return <WindowsPrinterFinder busy={busy} onPick={onPick} />;
+  }
+
   if (kind === 'usb') {
+    const onWindows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
     return (
       <div className="printer-choose">
+        {/* First, because it is the common case: a shop PC's receipt printer already has its
+            Windows driver, and then the browser cannot open it directly. */}
+        {onWindows && (
+          <button type="button" className="printer-option" disabled={busy} onClick={() => setUsbMode('windows')}>
+            <strong>{t('printer.chooseWindows')}</strong>
+            <small>{t('printer.chooseWindowsHint')}</small>
+          </button>
+        )}
         {web.usb && (
           <button type="button" className="printer-option" disabled={busy} onClick={() => onPick(pickWebPrinter('usb'))}>
             <strong>{t('printer.chooseUsb')}</strong>
@@ -592,6 +808,141 @@ function WebFinder({ kind, web, busy, onPick }) {
   );
 }
 
+// ------------------------------------------ Windows-installed printers (bridge) ---
+
+function BridgeMissing({ onRetry }) {
+  const { t } = useLanguage();
+  return (
+    <div className="printer-find">
+      <div className="info-banner">
+        <div>
+          <strong>{t('printer.bridgeTitle')}</strong>
+          <div>{t('printer.bridgeBody')}</div>
+        </div>
+      </div>
+      <ol className="printer-steps">
+        <li>{t('printer.bridgeStep1')}</li>
+        <li>{t('printer.bridgeStep2')}</li>
+        <li>{t('printer.bridgeStep3')}</li>
+      </ol>
+      <div className="printer-find-actions">
+        <a className="btn btn-primary btn-small btn-inline" href={bridgeDownloadUrl()} target="_blank" rel="noopener noreferrer">{t('printer.bridgeDownload')}</a>
+        <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={onRetry}>{t('printer.bridgeRetry')}</button>
+      </div>
+      <p className="section-note">{t('printer.bridgeOrSystem')}</p>
+    </div>
+  );
+}
+
+/**
+ * "This printer is on COM3 but plugged in by USB": Windows swallows every job sent to the
+ * wrong port without an error, so the one visible symptom is a printer that silently
+ * prints nothing. The bridge spots it; this offers the one-click fix.
+ */
+function PortWarning({ printer, onFixed }) {
+  const { t } = useLanguage();
+  const toast = useToast();
+  const [fixing, setFixing] = useState(false);
+  async function fix() {
+    setFixing(true);
+    try {
+      await bridgeFixWindowsPort(printer.name);
+      toast.success(t('printer.portFixed'));
+      onFixed?.();
+    } catch (err) {
+      toast.error(t(errorKey(err)));
+    } finally {
+      setFixing(false);
+    }
+  }
+  return (
+    <div className="info-banner printer-port-warning">
+      <AlertIcon size={16} />
+      <span>{t('printer.portWrong', { port: printer.port.replace(/:$/, ''), usb: printer.suggestPort })}</span>
+      <button type="button" className="btn btn-primary btn-small btn-inline" onClick={fix} disabled={fixing}>
+        {fixing ? <SpinnerIcon size={14} /> : null} {t('printer.fixPort')}
+      </button>
+    </div>
+  );
+}
+
+/** The same check for a printer already saved: shown in its settings form. */
+function SavedPortCheck({ record }) {
+  const [info, setInfo] = useState(null);
+  const load = async () => {
+    try {
+      const list = await bridgeWindowsPrinters();
+      setInfo(list.find((p) => p.name === record.address) || null);
+    } catch {
+      setInfo(null);
+    }
+  };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.address]);
+  if (!info?.suggestPort) return null;
+  return <PortWarning printer={info} onFixed={load} />;
+}
+
+function WindowsPrinterFinder({ busy, onPick }) {
+  const { t } = useLanguage();
+  const [state, setState] = useState('checking'); // checking | missing | ready | failed
+  const [printers, setPrinters] = useState([]);
+
+  async function load() {
+    setState('checking');
+    if (!(await bridgeAvailable())) {
+      setState('missing');
+      return;
+    }
+    try {
+      setPrinters(await bridgeWindowsPrinters());
+      setState('ready');
+    } catch {
+      setState('failed');
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  if (state === 'checking') return <p className="section-note"><SpinnerIcon size={14} /> {t('printer.bridgeChecking')}</p>;
+  if (state === 'missing') return <BridgeMissing onRetry={load} />;
+  return (
+    <div className="printer-find">
+      <div className="printer-find-head">
+        <span><CheckCircleIcon size={14} /> {t('printer.bridgeReady')}</span>
+        <button type="button" className="link-btn" onClick={load} disabled={busy}><RefreshIcon size={14} /> {t('printer.scanAgain')}</button>
+      </div>
+      {printers.length > 0 ? (
+        <ul className="printer-devices">
+          {printers.map((printer) => (
+            <li key={printer.name}>
+              <button type="button" className="printer-device" disabled={busy} onClick={() => onPick(openWindowsPrinter(printer))}>
+                <PrinterIcon size={16} />
+                <span>
+                  <strong>{cleanName(printer.name)}</strong>
+                  <small>{cleanName(printer.driver, '')}{printer.offline ? ` · ${t('printer.stDisconnected')}` : ''}</small>
+                </span>
+              </button>
+              {printer.suggestPort && <PortWarning printer={printer} onFixed={load} />}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="printer-empty">
+          <div>
+            <strong>{t('printer.foundNone')}</strong>
+            <small>{t('printer.winNone')}</small>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // -------------------------------------------------- the one form, add and edit alike ---
 
 /**
@@ -606,6 +957,9 @@ export function PrinterSetupForm({ id, firstRun = false }) {
   const [tested, setTested] = useState(false);
   const [note, setNote] = useState(null);
   const [error, setError] = useState(null);
+  // Offered once the first test slip came out right: the auto-print switch exists, but
+  // a shopkeeper who never opens that corner of Settings would press Print on every bill.
+  const [askAuto, setAskAuto] = useState(false);
   // What the box said when the form opened: an emptied name goes back to this.
   const nameAtOpen = useRef(null);
 
@@ -631,8 +985,11 @@ export function PrinterSetupForm({ id, firstRun = false }) {
 
   function problem(kind) {
     if (kind === 'edges') {
-      patch({ paperMm: 58 });
+      stepWidth(id, -1);
       setNote(t('printer.fixEdges'));
+    } else if (kind === 'sides') {
+      stepWidth(id, +1);
+      setNote(t('printer.fixSides'));
     } else if (kind === 'garbage') {
       if (!record.compat) {
         patch({ compat: true });
@@ -686,8 +1043,8 @@ export function PrinterSetupForm({ id, firstRun = false }) {
         <div className="field">
           <label>{t('printer.paper')}</label>
           <div className="segmented segmented-sm" role="group">
-            <button type="button" className={record.paperMm === 58 ? 'active' : ''} onClick={() => patch({ paperMm: 58 })}>{t('printer.mm58')}</button>
-            <button type="button" className={record.paperMm === 80 ? 'active' : ''} onClick={() => patch({ paperMm: 80 })}>{t('printer.mm80')}</button>
+            <button type="button" className={record.paperMm === 58 ? 'active' : ''} onClick={() => patch({ paperMm: 58, dots: null })}>{t('printer.mm58')}</button>
+            <button type="button" className={record.paperMm === 80 ? 'active' : ''} onClick={() => patch({ paperMm: 80, dots: null })}>{t('printer.mm80')}</button>
           </div>
         </div>
       ) : (
@@ -704,6 +1061,8 @@ export function PrinterSetupForm({ id, firstRun = false }) {
         </div>
       )}
 
+      {record.transport === 'winspool' && <SavedPortCheck record={record} />}
+
       <div className="printer-test">
         <button type="button" className={`btn ${firstRun && !tested ? 'btn-primary' : 'btn-secondary'} btn-small btn-inline`} onClick={test} disabled={testing}>
           {testing ? <SpinnerIcon size={14} /> : <PrinterIcon size={15} />} {tested ? t('printer.testAgain') : t('printer.test')}
@@ -712,7 +1071,13 @@ export function PrinterSetupForm({ id, firstRun = false }) {
           <div className="printer-test-q">
             <span>{t('printer.testQuestion')}</span>
             <div className="printer-test-answers">
-              <button type="button" className="chip-toggle on" onClick={() => { setTested(false); setNote(t('printer.testGood')); }}>{t('printer.ansGood')}</button>
+              <button type="button" className="chip-toggle on" onClick={() => {
+                setTested(false);
+                setNote(t('printer.testGood'));
+                // Only for the printer that prints bills, and only if it is not on already.
+                if (!isLabel && settings.roles.receipt === id && !settings.autoPrint) setAskAuto(true);
+              }}>{t('printer.ansGood')}</button>
+              {!isLabel && <button type="button" className="chip-toggle" onClick={() => problem('sides')}>{t('printer.ansSides')}</button>}
               {!isLabel && <button type="button" className="chip-toggle" onClick={() => problem('edges')}>{t('printer.ansEdges')}</button>}
               <button type="button" className="chip-toggle" onClick={() => problem('garbage')}>{t('printer.ansGarbage')}</button>
               <button type="button" className="chip-toggle" onClick={() => problem('stops')}>{t('printer.ansStops')}</button>
@@ -721,6 +1086,19 @@ export function PrinterSetupForm({ id, firstRun = false }) {
           </div>
         )}
         {note && <div className="info-banner">{note}</div>}
+        {askAuto && (
+          <div className="info-banner printer-ask-auto">
+            <span>{t('printer.askAutoPrint')}</span>
+            <div className="printer-find-actions">
+              <button type="button" className="btn btn-primary btn-small btn-inline" onClick={() => { setAutoPrint(true); setAskAuto(false); setNote(t('printer.autoPrintOn')); }}>
+                {t('printer.askAutoYes')}
+              </button>
+              <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={() => setAskAuto(false)}>
+                {t('printer.askAutoNo')}
+              </button>
+            </div>
+          </div>
+        )}
         {error && <div className="error-banner">{error}</div>}
       </div>
 

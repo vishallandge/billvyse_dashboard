@@ -115,7 +115,7 @@ export default function InvoiceDocument({
   showDiscount = true,
   showBatch = true,
   showWatermark = true,
-  // The "Billed with BillVyse" credit at the foot. Unlike every other flag on this list
+  // The "Powered by BillVyse" credit at the foot. Unlike every other flag on this list
   // it is not the shopkeeper's to choose on the print screen — the server resolves it
   // against the plan and sends it on `meta`. Defaults to on so a caller that hasn't been
   // updated still prints it.

@@ -9,6 +9,7 @@ import InvoiceDocument from '../../../../components/InvoiceDocument';
 import InvoicePreviewStage from '../../../../components/InvoicePreviewStage';
 import Dropdown from '../../../../components/Dropdown';
 import { PrinterIcon } from '../../../../components/Icons';
+import { printInvoiceSheet } from '../../../../../lib/printer/slip';
 import {
   INVOICE_TEMPLATES,
   INVOICE_THEMES,
@@ -87,10 +88,14 @@ export default function SupplyBillPrintPage() {
   }
 
   const meta = invoice?.meta;
+  const isRoll = look?.paper === 'thermal' || look?.paper === 'thermal58';
 
   return (
     <>
-      <style>{'@page { margin: 8mm; }'}</style>
+      {/* The paper picked below is the page that prints — it used to set only a margin, so
+          A5 and the 80mm roll both came out on the printer's default sheet. A roll is sized
+          to the bill at print time (printInvoiceSheet). */}
+      <style>{`@page { size: ${(INVOICE_PAPERS.find((p) => p.id === look?.paper) || INVOICE_PAPERS[0]).page.replace(' auto', '')}; margin: ${isRoll ? 2 : 8}mm; }`}</style>
 
       <div className="content-header invoice-noprint">
         <h1>{t('supply.billPrintTitle')}</h1>
@@ -105,7 +110,7 @@ export default function SupplyBillPrintPage() {
           {invoice?.buyer?.name && <em>{invoice.buyer.name}</em>}
         </span>
         <div className="invoice-actionbar-right">
-          <button type="button" className="btn btn-primary btn-small" onClick={() => window.print()} disabled={!invoice}>
+          <button type="button" className="btn btn-primary btn-small" onClick={() => printInvoiceSheet({ paper: look?.paper, marginMm: isRoll ? 2 : 8 })} disabled={!invoice}>
             <PrinterIcon size={15} /> {t('supply.printSave')}
           </button>
         </div>

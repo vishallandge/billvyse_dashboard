@@ -20,7 +20,7 @@ import WhatsappSheet from '../../../components/WhatsappSheet';
 import PrinterStatusChip from '../../../components/PrinterStatusChip';
 import usePrinters from '../../../../lib/printer/usePrinters';
 import { errorKey, getRolePrinter, printElement } from '../../../../lib/printer';
-import { systemPrint } from '../../../../lib/printer/slip';
+import { printInvoiceSheet } from '../../../../lib/printer/slip';
 import {
   INVOICE_TEMPLATES,
   INVOICE_THEMES,
@@ -510,9 +510,19 @@ export default function InvoicePage() {
   const directPrinter = isThermal ? getRolePrinter('receipt') : null;
   const [printingDirect, setPrintingDirect] = useState(false);
 
+  /**
+   * The Print screen. A roll-paper invoice gets a page exactly as long as the invoice:
+   * `@page { size: 80mm auto }` is not valid CSS, so without this Chrome used the driver's
+   * 80 × 297mm page and fed out twenty centimetres of blank roll after every bill.
+   */
+  function openPrintScreen() {
+    const margin = PRINT_MARGINS.find((option) => option.id === prefs.margin) || PRINT_MARGINS[0];
+    printInvoiceSheet({ paper: prefs.paper, marginMm: margin.mm });
+  }
+
   async function handlePrintInvoice() {
     if (!directPrinter) {
-      systemPrint();
+      openPrintScreen();
       return;
     }
     setPrintingDirect(true);
@@ -524,7 +534,7 @@ export default function InvoicePage() {
       });
     } catch (err) {
       toast.info(t('printer.directFailed', { name: directPrinter.name, reason: t(errorKey(err)) }));
-      systemPrint();
+      openPrintScreen();
     } finally {
       setPrintingDirect(false);
     }

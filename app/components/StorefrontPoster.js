@@ -16,7 +16,9 @@ export default function StorefrontPoster({ url, shopName }) {
     if (!url) return;
     let active = true;
     import('qrcode')
-      .then((QRCode) => QRCode.toDataURL(url, { width: 320, margin: 1 }))
+      // 1024px: the poster prints the code ~8cm wide, and a 320px bitmap stretched that far
+      // prints soft-edged. Crisp squares are what a phone camera locks onto from a distance.
+      .then((QRCode) => QRCode.toDataURL(url, { width: 1024, margin: 1, errorCorrectionLevel: 'M' }))
       .then((u) => active && setDataUrl(u))
       .catch(() => {});
     return () => {
@@ -39,7 +41,7 @@ export default function StorefrontPoster({ url, shopName }) {
         .poster{width:420px;text-align:center;border:3px solid ${brand};border-radius:24px;padding:36px 28px}
         .brand{font-size:14px;letter-spacing:.2em;text-transform:uppercase;color:${ink};font-weight:800}
         .shop{font-size:30px;font-weight:800;margin:10px 0 20px}
-        img{width:300px;height:300px}
+        img{width:300px;height:300px;image-rendering:pixelated}
         .scan{font-size:20px;font-weight:700;margin-top:20px}
         .foot{margin-top:14px;font-size:12px;color:#888}
       </style></head><body onload="window.print()">

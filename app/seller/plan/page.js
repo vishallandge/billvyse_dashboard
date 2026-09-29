@@ -467,9 +467,9 @@ const COUNTS = [
 const COMPARE_ROWS = [
   {
     label: {
-      en: 'Remove "Billed with BillVyse" from bills',
-      hi: 'बिल से "BillVyse से बना बिल" हटाएं',
-      mr: 'बिलावरून "BillVyse वर तयार केलेले बिल" काढा',
+      en: 'Remove "Powered by BillVyse" from bills',
+      hi: 'बिल से "Powered by BillVyse" हटाएं',
+      mr: 'बिलावरून "Powered by BillVyse" काढा',
     },
     feature: 'invoice.branding',
   },

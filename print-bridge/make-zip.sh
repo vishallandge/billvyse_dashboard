@@ -34,7 +34,7 @@ fetch() { # file name on nodejs.org → verified local copy
 fetch "node-$NODE_VERSION-win-x64.zip"
 mkdir -p "$WORK/win"
 unzip -q -j "$WORK/node-$NODE_VERSION-win-x64.zip" "node-$NODE_VERSION-win-x64/node.exe" -d "$WORK/win"
-cp "$HERE/bridge.js" "$HERE/Start Print Bridge.bat" "$HERE/Start with Windows.bat" "$WORK/win/"
+cp "$HERE/bridge.js" "$HERE/Start Print Bridge.bat" "$HERE/Start with Windows.bat" "$HERE/Stop Print Bridge.bat" "$HERE/Print Bridge (background).vbs" "$WORK/win/"
 (cd "$WORK/win" && zip -q -X "$WORK/billvyse-print-bridge.zip" ./*)
 
 # ---- Mac (Apple Silicon + Intel; the start script picks the right one) ----

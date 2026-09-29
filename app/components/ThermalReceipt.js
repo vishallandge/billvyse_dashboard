@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import UpiQr from './UpiQr';
+import usePrinters from '../../lib/printer/usePrinters';
 
 // The receipt the browser "Print" button actually prints. Rendered through a portal as a
 // direct child of <body> and hidden on screen (display:none); handlePrint adds a
@@ -37,6 +38,9 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
   // Portals need the DOM; only render after mount to stay SSR-safe.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Settings → Printers can leave the bill-link QR off the slip: ~3cm of roll per bill.
+  const { settings: printerSettings } = usePrinters();
+  const showBillQr = printerSettings.billQr !== false;
 
   // Offline "pending sync" receipts aren't real bills yet — nothing to print.
   if (!receipt || receipt.offline || !mounted) return null;
@@ -187,7 +191,9 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
       </div>
 
       {receipt.paymentMode === 'upi' && upiLink && (
-        <div className="tr-qr">
+        // data-print-mm: the QR keeps this real size on paper whatever the text size — the
+        // smallest that still scans reliably off a phone camera (see lib/printer/raster.js).
+        <div className="tr-qr tr-qr-upi" data-print-mm="32">
           <UpiQr link={upiLink} size={150} />
           <div className="tr-line">{t('seller.scanToPay')}</div>
         </div>
@@ -197,8 +203,8 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
           fades in a month and gets lost sooner; the QR is how a warranty claim or a return
           still finds the real bill. Not on a UPI-pending slip, which already carries a QR
           the customer has to scan first — two codes on one slip get scanned in the wrong order. */}
-      {billLink && !(receipt.paymentMode === 'upi' && upiLink) && (
-        <div className="tr-qr">
+      {showBillQr && billLink && !(receipt.paymentMode === 'upi' && upiLink) && (
+        <div className="tr-qr tr-qr-bill" data-print-mm="28">
           <UpiQr link={billLink} size={110} />
           <div className="tr-line">{t('seller.billLinkScan')}</div>
         </div>
@@ -210,7 +216,7 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
         {/* Resolved against the shop's plan server-side and carried on /auth/me, so the
             counter slip agrees with the A4 bill without a fetch of its own. Absent on an
             older cached session, which prints it — the Free-plan answer. */}
-        {shop?.showAppCredit !== false && <div className="tr-brand">Billed with BillVyse</div>}
+        {shop?.showAppCredit !== false && <div className="tr-brand">Powered by BillVyse</div>}
       </div>
     </div>,
     document.body

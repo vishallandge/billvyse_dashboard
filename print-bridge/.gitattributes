@@ -4,3 +4,4 @@
 *.command text eol=lf
 *.js text eol=lf
 *.bat text eol=crlf
+*.vbs text eol=crlf

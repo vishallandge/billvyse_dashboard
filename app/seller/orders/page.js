@@ -8,6 +8,7 @@ import { useLanguage } from '../../components/LanguageProvider';
 import Illustration from '../../components/Illustration';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useDashboardUser } from '../../components/DashboardShell';
+import { measureSlipMm, pinPageSize, shopPaper } from '../../../lib/printer/slip';
 import {
   OrdersIcon, XIcon, RupeeIcon, WalletIcon, CreditCardIcon, LedgerIcon, PlusIcon, EditIcon, TrashIcon, RefreshIcon, CopyIcon,
   CheckCircleIcon, ReceiptIcon, ClockIcon, ScooterIcon, BagIcon, ListIcon, PhoneIcon, WhatsappIcon, MapPinIcon, PrinterIcon,
@@ -508,9 +509,18 @@ export default function OrdersPage() {
    * the dialog closes.
    */
   function printSlip() {
+    // On a shop whose chosen paper is a roll (Settings → Invoice look), the slip follows
+    // it: roll width, cut to its own length. On sheet paper it stays an ordinary sheet.
+    const paper = shopPaper(user);
+    let unpin = null;
+    if (paper.roll) {
+      const heightMm = measureSlipMm(document.querySelector('.order-detail-sheet'), { widthMm: paper.widthMm, padding: '3mm' });
+      if (heightMm) unpin = pinPageSize(paper.widthMm, heightMm + 6);
+    }
     document.body.classList.add('printing-order');
     const cleanup = () => {
       document.body.classList.remove('printing-order');
+      unpin?.();
       window.removeEventListener('afterprint', cleanup);
     };
     window.addEventListener('afterprint', cleanup);
