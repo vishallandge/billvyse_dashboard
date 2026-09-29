@@ -1169,6 +1169,7 @@ const ICON_MAP = {
   // Platform admin sections.
   modules: SlidersIcon,
   advisories: ZapIcon,
+  staffAccess: KeyIcon,
   plans: CreditCardIcon,
   platform: SettingsIcon,
   audit: AuditIcon,

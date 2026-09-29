@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { useDashboardUser } from '../../components/DashboardShell';
+import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
+import { SELLER_NAV_ITEMS } from '../../../lib/sellerNav';
 import { tradeUses, DEFAULT_BUSINESS_TYPE } from '../../../lib/businessTypes';
 import { useLanguage } from '../../components/LanguageProvider';
 import Illustration from '../../components/Illustration';
@@ -13,7 +14,7 @@ import { SkeletonTable } from '../../components/Skeleton';
 import {
   PlusIcon, XIcon, EditIcon, TrashIcon, UsersIcon, ShieldIcon, WalletIcon, CalendarIcon,
   CounterIcon, PackageIcon, TruckIcon, LedgerIcon, ClipboardIcon, CheckIcon, ChevronDownIcon, RupeeIcon, RefreshIcon,
-  CheckCircleIcon, LogOutIcon,
+  CheckCircleIcon, LogOutIcon, ShopIcon,
 } from '../../components/Icons';
 import RowMenu from '../../components/RowMenu';
 import StaffAttendance from '../../components/StaffAttendance';
@@ -36,6 +37,7 @@ const ROLE_ICONS = {
   purchaseManager: TruckIcon,
   accountant: LedgerIcon,
   backOffice: ClipboardIcon,
+  branchManager: ShopIcon,
   manager: ShieldIcon,
 };
 
@@ -80,13 +82,18 @@ function currentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// Mirrors backend/controllers/staffController.js VALID_PERMISSIONS. The list from the API
-// wins once it loads — this is only what the form shows on first paint.
-// Mirrors VALID_PERMISSIONS in backend/controllers/staffController.js — only used when
-// the API's own list hasn't loaded yet.
+// Mirrors STAFF_PERMISSIONS in backend/config/staffPermissions.js — only what the form shows
+// on first paint. The API's list wins once it loads, and that one has the platform admin's
+// switches applied (a permission switched off there is simply not in it).
 const FALLBACK_PERMISSIONS = [
-  'billing', 'inventory', 'khata', 'orders', 'purchases', 'suppliers', 'expenses', 'appointments', 'exports',
+  'billing', 'inventory', 'khata', 'orders', 'purchases', 'suppliers', 'expenses', 'appointments', 'exports', 'reports',
 ];
+
+// Permissions that modify what the holder may do rather than opening a screen of their own.
+const MODIFIER_PERMISSIONS = ['exports'];
+
+// Never listed as "only you can open": the dashboard home is where every login lands.
+const NOT_A_SCREEN = ['overview'];
 
 export default function StaffPage() {
   const user = useDashboardUser();
@@ -135,7 +142,61 @@ export default function StaffPage() {
    * and then refused it, and there was nothing the shopkeeper could read to know why.
    */
   const assignableStores = stores.filter((store) => store.isActive !== false);
-  const activePreset = matchingPreset(presets, form.permissions);
+
+  /**
+   * Which screens each permission actually opens IN THIS SHOP.
+   *
+   * Nine bare words ("Billing", "Expenses & day book") never said that Billing also opens
+   * Tables, Kitchen, Quotations and Credit notes — so an owner could not tell what a tick
+   * handed over. Read from the same nav table that decides the staff member's sidebar, minus
+   * whatever this shop does not have (its trade, its plan, the platform admin, its own
+   * Settings → Screens), so the list cannot promise a screen the staff member will not get.
+   */
+  const hiddenNav = useHiddenNav();
+  const screensByPermission = useMemo(() => {
+    const map = {};
+    for (const item of SELLER_NAV_ITEMS) {
+      if (!item.staffVisible || !item.permission || hiddenNav.includes(item.key)) continue;
+      (map[item.permission] ||= []).push(item.key);
+    }
+    return map;
+  }, [hiddenNav]);
+  const ownerOnlyScreens = useMemo(
+    () => SELLER_NAV_ITEMS
+      .filter((item) => !item.staffVisible && !item.staffOnly && !NOT_A_SCREEN.includes(item.key) && !hiddenNav.includes(item.key))
+      .map((item) => item.key),
+    [hiddenNav]
+  );
+
+  // A permission that opens nothing here (the appointment book in a kirana, online orders
+  // with the storefront switched off) is a tick box that does nothing — not offered. One a
+  // staff member already holds stays visible, so it can still be taken away.
+  const shownPermissions = allPermissions.filter((perm) =>
+    MODIFIER_PERMISSIONS.includes(perm)
+    || (screensByPermission[perm] || []).length > 0
+    || form.permissions.includes(perm));
+  const usablePermissions = allPermissions.filter((perm) =>
+    MODIFIER_PERMISSIONS.includes(perm) || (screensByPermission[perm] || []).length > 0);
+
+  // Roles trimmed to what this shop can use. Trimming can turn two roles into the same set
+  // (a receptionist in a kirana is just a cashier), so the second one is dropped rather than
+  // shown as a card that can never be told apart from the first.
+  const shownPresets = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const preset of presets) {
+      const perms = preset.permissions.filter((p) => usablePermissions.includes(p));
+      const signature = [...perms].sort().join('+');
+      if (perms.length === 0 || seen.has(signature)) continue;
+      seen.add(signature);
+      out.push({ ...preset, permissions: perms });
+    }
+    return out;
+    // usablePermissions is derived from these two every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presets, allPermissions, screensByPermission]);
+
+  const activePreset = matchingPreset(shownPresets, form.permissions);
 
   const showCommission = tradeUses(
     user?.businessType || DEFAULT_BUSINESS_TYPE,
@@ -233,7 +294,7 @@ export default function StaffPage() {
     setHandover(null);
     setEditingId(member.id);
     // A set nobody can name is a set that has to be shown.
-    setAccessOpen(matchingPreset(presets, member.permissions || []) === '');
+    setAccessOpen(matchingPreset(shownPresets, member.permissions || []) === '');
     setFormError('');
     setFormOpen(true);
   }
@@ -252,11 +313,16 @@ export default function StaffPage() {
       };
       if (editingId) {
         const body = { ...payload };
-        // Email is the login id and never changes; a blank password means "leave it alone".
-        delete body.email;
+        // A blank password means "leave it alone". The email goes along: it can be corrected
+        // now, and the server only acts on it when it actually differs.
         if (!body.password) delete body.password;
+        const before = staff.find((s) => s.id === editingId);
+        const emailChanged = Boolean(before) && (before.email || '').toLowerCase() !== form.email.trim().toLowerCase();
         await apiFetch(`/api/seller/staff/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
         toast.success(t('seller.staffUpdated'));
+        // Said out loud: the server has just ended every login this person had, and the
+        // cashier finding the till logged out should not be the owner's first news of it.
+        if (body.password || emailChanged) toast.info(t('staff.loggedOutEverywhere', { name: form.name }));
         // A reset password has exactly the same problem a new one does — it is useless
         // until it reaches the person — so it gets the same hand-over.
         if (body.password) {
@@ -598,8 +664,8 @@ export default function StaffPage() {
                   </div>
                   <div className="field">
                     <label htmlFor="staffEmail">{t('seller.staffEmail')}</label>
-                    <input id="staffEmail" type="email" value={form.email} onChange={update('email')} required disabled={Boolean(editingId)} />
-                    {editingId && <p className="field-hint">{t('staff.emailLocked')}</p>}
+                    <input id="staffEmail" type="email" value={form.email} onChange={update('email')} required autoComplete="off" />
+                    <p className="field-hint">{editingId ? t('staff.emailChangeHint') : t('staff.emailHint')}</p>
                   </div>
                   <PhoneField
                     id="staffPhone"
@@ -639,7 +705,7 @@ export default function StaffPage() {
                         {t('staff.suggest')}
                       </button>
                     </div>
-                    <p className="field-hint">{t('staff.passwordDictateHint')}</p>
+                    <p className="field-hint">{editingId ? t('staff.passwordChangeHint') : t('staff.passwordDictateHint')}</p>
                   </div>
                 </div>
               </section>
@@ -654,7 +720,7 @@ export default function StaffPage() {
                     title and ticks the boxes below; the boxes are still there for anyone
                     who wants a shape none of these cards has. */}
                 <div className="role-grid">
-                  {presets.map((preset) => {
+                  {shownPresets.map((preset) => {
                     const Icon = ROLE_ICONS[preset.key] || ShieldIcon;
                     return (
                       <button
@@ -667,7 +733,7 @@ export default function StaffPage() {
                         <span className="role-card-icon"><Icon size={18} /></span>
                         <span className="role-card-name">{t(`seller.preset.${preset.key}`) || preset.label}</span>
                         <span className="role-card-sub">
-                          {preset.permissions.length === allPermissions.length
+                          {preset.permissions.length === usablePermissions.length
                             ? t('staff.roleEverything')
                             : preset.permissions.slice(0, 2).map((p) => t(`seller.perm.${p}`)).join(', ')
                               + (preset.permissions.length > 2 ? ` +${preset.permissions.length - 2}` : '')}
@@ -702,8 +768,9 @@ export default function StaffPage() {
                 </button>
 
                 {accessOpen && (
+                  <>
                   <div className="permission-grid" style={{ marginTop: '0.6rem' }}>
-                    {allPermissions.map((perm) => (
+                    {shownPermissions.map((perm) => (
                       <label key={perm} className="permission-option">
                         <input
                           type="checkbox"
@@ -713,10 +780,23 @@ export default function StaffPage() {
                         <span>
                           <strong>{t(`seller.perm.${perm}`)}</strong>
                           <small>{t(`seller.permDesc.${perm}`)}</small>
+                          {(screensByPermission[perm] || []).length > 0 && (
+                            <span className="permission-opens">
+                              {t('staff.opens', {
+                                list: screensByPermission[perm].map((key) => t(`nav.${key}`)).join(' · '),
+                              })}
+                            </span>
+                          )}
                         </span>
                       </label>
                     ))}
                   </div>
+                  {ownerOnlyScreens.length > 0 && (
+                    <p className="field-hint permission-owner-only">
+                      {t('staff.ownerOnly', { list: ownerOnlyScreens.map((key) => t(`nav.${key}`)).join(', ') })}
+                    </p>
+                  )}
+                  </>
                 )}
               </section>
 

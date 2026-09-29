@@ -18,6 +18,10 @@ const navItems = [
   // which SCREENS a shop gets, Salah decides which of the forty-two things the app is
   // willing to TELL a shop about its own money — and, per rule, whether that costs money.
   { href: '/admin/advisories', key: 'advisories' },
+  // The third lever of the same kind: Modules decides which screens a shop gets, this
+  // decides which of them a shop may hand to a staff login, and what each ready-made role
+  // ticks. Changing "what a cashier gets" is a tap here, not a deploy.
+  { href: '/admin/staff-access', key: 'staffAccess' },
   { href: '/admin/plans', key: 'plans' },
   // Sits with Plans rather than with Platform: pricing and what the app says about pricing
   // are one lever, and an operator who has just moved a feature between tiers is one click

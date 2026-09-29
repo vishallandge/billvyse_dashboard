@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useToast } from '../../components/Toast';
-import { SearchIcon, CheckCircleIcon, LockIcon, KeyIcon } from '../../components/Icons';
+import { SearchIcon, CheckCircleIcon, LockIcon, KeyIcon, MailIcon, EditIcon } from '../../components/Icons';
 import RowMenu from '../../components/RowMenu';
 import { SkeletonTable } from '../../components/Skeleton';
 import { Pagination } from '../../components/Pagination';
@@ -24,6 +24,10 @@ export default function AdminUsersPage() {
   const [pageSize, setPageSize] = useState(25);
   const [resetTarget, setResetTarget] = useState(null);
   const [password, setPassword] = useState('');
+  // Correcting a staff login's email — the one fix that makes "forgot password" reach them.
+  const [emailTarget, setEmailTarget] = useState(null);
+  const [newEmail, setNewEmail] = useState('');
+  const [busy, setBusy] = useState(false);
 
   function load() {
     setLoading(true);
@@ -59,6 +63,41 @@ export default function AdminUsersPage() {
       load();
     } catch (err) {
       toast.error(err.message);
+    }
+  }
+
+  /**
+   * The first move for anybody locked out, owner or staff: the link goes to THEIR inbox and
+   * nobody here learns a password. The temporary password below stays the last resort.
+   */
+  async function sendResetLink(user) {
+    setBusy(true);
+    try {
+      const data = await apiFetch(`/api/admin/users/${user.id}/reset-link`, { method: 'POST' });
+      toast.success(t('admin.resetLinkSent', { email: data.email || user.email }));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitEmail() {
+    if (!emailTarget) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/admin/users/${emailTarget.id}/email`, {
+        method: 'PATCH',
+        body: JSON.stringify({ email: newEmail.trim() }),
+      });
+      toast.success(t('admin.emailChanged'));
+      setEmailTarget(null);
+      setNewEmail('');
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -124,7 +163,14 @@ export default function AdminUsersPage() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.name}{user.shopName ? <div className="cell-sub">{user.shopName}</div> : null}</td>
+                  <td>
+                    {user.name}
+                    {user.shopName ? (
+                      <div className="cell-sub">
+                        {user.role === 'staff' ? t('admin.staffOf', { shop: user.shopName }) : user.shopName}
+                      </div>
+                    ) : null}
+                  </td>
                   <td>{user.email}</td>
                   <td><span className="badge">{user.role}</span></td>
                   <td><span className={`badge badge-${user.isActive ? 'active' : 'inactive'}`}>{user.isActive ? 'active' : 'inactive'}</span></td>
@@ -142,6 +188,26 @@ export default function AdminUsersPage() {
                               danger: user.isActive,
                               onClick: () => toggleActive(user.id, user.isActive),
                             },
+                            // Link first, temporary password last — the order support should reach
+                            // for them in.
+                            ...(user.isActive
+                              ? [{
+                                  label: t('admin.sendResetLink'),
+                                  icon: <MailIcon size={15} />,
+                                  disabled: busy,
+                                  onClick: () => sendResetLink(user),
+                                }]
+                              : []),
+                            ...(user.role === 'staff'
+                              ? [{
+                                  label: t('admin.changeEmail'),
+                                  icon: <EditIcon size={15} />,
+                                  onClick: () => {
+                                    setNewEmail(user.email || '');
+                                    setEmailTarget(user);
+                                  },
+                                }]
+                              : []),
                             {
                               label: t('admin.resetPassword'),
                               icon: <LockIcon size={15} />,
@@ -198,7 +264,43 @@ export default function AdminUsersPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              <p className="field-hint">{t('admin.resetPasswordHint')}</p>
             </div>
+        </Modal>
+      )}
+
+      {emailTarget && (
+        <Modal
+          onClose={() => setEmailTarget(null)}
+          title={t('admin.changeEmail')}
+          hint={`${emailTarget.name}${emailTarget.shopName ? ` · ${emailTarget.shopName}` : ''}`}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-primary btn-inline"
+                disabled={busy || !/^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(newEmail.trim()) || newEmail.trim().toLowerCase() === (emailTarget.email || '').toLowerCase()}
+                onClick={submitEmail}
+              >
+                <MailIcon size={17} /> {t('admin.changeEmail')}
+              </button>
+              <button type="button" className="btn btn-secondary btn-inline" onClick={() => setEmailTarget(null)}>
+                {t('common.cancel')}
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <label htmlFor="staff-new-email">{t('admin.newEmail')}</label>
+            <input
+              id="staff-new-email"
+              type="email"
+              autoComplete="off"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+            />
+            <p className="field-hint">{t('admin.changeEmailHint')}</p>
+          </div>
         </Modal>
       )}
     </>

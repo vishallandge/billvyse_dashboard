@@ -6625,6 +6625,70 @@ tbody tr {
   flex-shrink: 0;
 }
 
+/* ---------- Day book: cash moved, lock line, history ---------- */
+
+/* Amount and its delete button sit together on the right of a ledger row. */
+.ledger-list li > .ledger-amount-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.ledger-list li.in > .ledger-amount-actions > strong { color: var(--text-success); }
+.ledger-list li.out > .ledger-amount-actions > strong { color: var(--text-danger); }
+
+.movement-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(120px, 0.8fr) minmax(160px, 1.4fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-top: 0.9rem;
+}
+
+.movement-form .field { margin: 0; }
+
+@media (max-width: 720px) {
+  .movement-form { grid-template-columns: 1fr 1fr; }
+  .movement-form .field:nth-child(3) { grid-column: 1 / -1; }
+  .movement-form > .btn { grid-column: 1 / -1; justify-content: center; }
+}
+
+.plain-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.plain-fieldset input[readonly] {
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.daybook-closed-by {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.daybook-history {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+}
+
+.daybook-history summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.daybook-history .ledger-list li { font-size: var(--fs-sm); }
+
 /* ---------- Reconcile banner ---------- */
 
 .reconcile-banner {
@@ -26477,6 +26541,313 @@ button {
   color: var(--brand-text);
 }
 
+/* ---------- Split by bill: names, shares, hand-split counts ---------- */
+.guest-split-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* "Share" and "Qty" sit in the same row as the round 1/2/3 chips but carry a word. */
+.guest-chip.guest-chip--wide {
+  width: auto;
+  padding: 0 0.6rem;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+}
+
+.guest-chip-row {
+  flex-wrap: wrap;
+}
+
+.guest-split-item-note {
+  flex-basis: 100%;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.guest-qty-row {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  align-items: center;
+}
+
+.guest-qty {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.guest-qty small {
+  color: var(--text-muted);
+  font-weight: 600;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A hand split that doesn't add up — the one state here that would lose the shop money. */
+.guest-split-item.is-off {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+
+.guest-split-item-warn {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.guest-summary-head strong {
+  font-weight: 800;
+  color: var(--brand-text);
+  white-space: nowrap;
+}
+
+.guest-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.guest-name-input:focus {
+  border-style: solid;
+  border-color: var(--brand);
+  outline: none;
+}
+
+.guest-summary-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: var(--fs-sm);
+}
+
+.guest-summary-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+
+.guest-summary-lines li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guest-summary-lines li.is-charge {
+  border-top: 1px dashed var(--border);
+  padding-top: 0.2rem;
+}
+
+/* ---------- Groups that already paid, and the section charge ---------- */
+.paid-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--success) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border));
+  font-size: var(--fs-sm);
+}
+
+.paid-parts__head {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.paid-parts__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.paid-parts__row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.section-charge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.section-charge-row > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.section-charge-row small {
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+.section-charge-row__amount {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ---------- Joined tables ---------- */
+.join-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.join-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.join-panel__label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.join-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.join-chip small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-weight: 500;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.join-chip.active {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+}
+
+.join-chip.is-joined {
+  cursor: default;
+  border-color: var(--brand);
+}
+
+.join-chip.is-joined button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  cursor: pointer;
+}
+
+.join-chip.is-joined button:hover {
+  color: var(--danger);
+}
+
+.join-seat-field {
+  margin-top: 0.8rem;
+}
+
+.floor-tile.is-joined {
+  border-style: dashed;
+}
+
+/* ---------- Sections on the floor ---------- */
+.zone-tabs {
+  margin-bottom: 0.9rem;
+}
+
+.zone-tab-count {
+  font-size: var(--fs-xs);
+  opacity: 0.75;
+  margin-left: 0.2rem;
+}
+
+.floor-zone-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.floor-zone-title__meta {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.zone-settings {
+  margin-top: 1.4rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.zone-settings h3 {
+  margin: 0 0 0.3rem;
+  font-size: var(--fs-md);
+}
+
+.zone-settings__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 1.2fr) auto;
+  gap: 0.6rem;
+  align-items: end;
+  margin-top: 0.6rem;
+}
+
+.zone-settings__row .field {
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .zone-settings__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
 /* ---------- Menu modifier picker ---------- */
 .modifier-picker-card {
   max-width: 420px;
@@ -27027,6 +27398,29 @@ button {
   min-width: 0;
   padding: 0.25rem 0.5rem;
   font-size: var(--fs-sm);
+}
+
+/* ---------- Print the slip when a round is fired (per device) ---------- */
+.kot-autoprint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.kot-autoprint > label:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.kot-autoprint small {
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
 }
 
 /* ---------- Rounds already fired ---------- */
@@ -37225,6 +37619,21 @@ select:disabled {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* The screens a tick hands over, in this shop. Its own line under the description, in the
+   brand colour, because it is the answer to "what does this actually give them". */
+.permission-option .permission-opens {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--brand-text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.permission-owner-only {
+  margin-top: 0.6rem;
 }
 
 
@@ -52535,5 +52944,3779 @@ a.stat-card:active,
   .bsr-row {
     animation: none;
     opacity: 1;
+  }
+}
+
+/* ---------- Printers (Settings → Printers, the counter chip) ----------
+   components/PrinterSettings.js and PrinterStatusChip.js. Rows, not cards: a shop has one
+   to three printers, and each row has to show name, connection, status and its actions at
+   a glance without a second tap. */
+.printer-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.printer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.printer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  flex-wrap: wrap;
+}
+
+.printer-row + .printer-row {
+  border-top: 1px solid var(--border);
+}
+
+.printer-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.printer-row-main {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.printer-row-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.printer-row-title strong {
+  font-size: var(--fs-base);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.printer-row-main small {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.printer-row-main .printer-row-error {
+  color: var(--text-danger);
+}
+
+.printer-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.printer-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+}
+
+.printer-empty > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.printer-empty strong {
+  color: var(--text);
+  font-size: var(--fs-base);
+}
+
+.printer-empty small {
+  font-size: var(--fs-sm);
+}
+
+.printer-footer {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.printer-auto {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.printer-auto > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.printer-auto strong {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.printer-auto small {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.printer-system-note {
+  margin: 0;
+}
+
+/* The add-printer dialog */
+.printer-choose {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.printer-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.printer-option:hover:not(:disabled) {
+  border-color: var(--brand);
+  background: rgba(var(--brand-rgb), 0.06);
+}
+
+.printer-option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.printer-option strong {
+  font-size: var(--fs-base);
+}
+
+.printer-option small {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.printer-find {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  align-items: stretch;
+}
+
+.printer-find > .link-btn {
+  align-self: flex-start;
+}
+
+.printer-find-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.printer-find-head > span,
+.printer-find-head .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.printer-find-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.printer-devices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.printer-device {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.printer-device:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+
+.printer-device > span:not(.badge) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.printer-device strong {
+  font-size: var(--fs-base);
+  overflow-wrap: anywhere;
+}
+
+.printer-device small {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.printer-ip-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.printer-ip-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.printer-steps {
+  margin: 0;
+  padding-inline-start: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.printer-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.printer-setup .segmented {
+  margin-bottom: 0;
+}
+
+.printer-test {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+}
+
+.printer-test > .info-banner,
+.printer-test > .error-banner {
+  align-self: stretch;
+  margin: 0;
+}
+
+.printer-test-q {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.printer-test-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.printer-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+/* The counter chip */
+.printer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 0.65rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.printer-chip > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.printer-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.printer-chip.is-on {
+  color: var(--text-success);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+
+.printer-chip.is-off {
+  color: var(--text-danger);
+  border-color: rgba(248, 113, 113, 0.45);
+  cursor: pointer;
+}
+
+.printer-chip.is-off:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.printer-chip.is-none:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.printer-setup .chip-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
+/* ---------- Manage tables: the restaurant, section by section ---------- */
+.manage-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0 0 1rem;
+  font-weight: 700;
+}
+
+.manage-summary span {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.manage-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.manage-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.manage-section__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface-strong);
+  border-bottom: 1px solid var(--border);
+}
+
+.manage-section__title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.manage-section__title h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+.manage-section__title span {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.manage-charge {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.manage-charge.is-on {
+  color: var(--brand-text);
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--border));
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.manage-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 0.55rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+}
+
+.manage-table {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  min-height: 64px;
+  padding: 0.55rem 0.65rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.manage-table:hover {
+  border-color: var(--brand);
+}
+
+.manage-table strong {
+  font-size: var(--fs-md);
+}
+
+.manage-table span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.manage-table em {
+  font-style: normal;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--brand-text);
+}
+
+.manage-table.is-off {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.manage-table.is-off em {
+  color: var(--text-muted);
+}
+
+.manage-table.is-add {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--brand-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+.manage-table.is-add span {
+  color: var(--brand-text);
+  font-weight: 700;
+}
+
+.manage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.5rem 0 0.8rem;
+  text-align: center;
+}
+
+.manage-empty h3 {
+  margin: 0;
+}
+
+.manage-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  text-align: left;
+  max-width: 460px;
+}
+
+.manage-steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  font-size: var(--fs-sm);
+}
+
+.manage-steps li::before {
+  content: counter(step);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface));
+  color: var(--brand-text);
+}
+
+.manage-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.manage-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 34px;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.manage-choice.active {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  color: var(--brand-text);
+}
+
+.manage-choice.is-new {
+  border-style: dashed;
+}
+
+.manage-bulk-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+@media (max-width: 560px) {
+  .manage-bulk-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.manage-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-strong);
+  background: var(--surface-strong);
+}
+
+.manage-preview p {
+  margin: 0;
+}
+
+.manage-preview__head {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+
+.manage-preview__warn {
+  color: var(--danger);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.manage-preview__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.manage-preview__chip {
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  color: var(--brand-text);
+}
+
+.manage-preview__chip.is-skip {
+  background: transparent;
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.manage-service {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  margin-top: 0.4rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+}
+
+.manage-service > div {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.manage-service p {
+  margin: 0.15rem 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.manage-service.is-off {
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--border));
+}
+
+/* The worked example under a section charge: ₹1,000 of food → what the customer pays. */
+.manage-example {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.3rem 1rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+.manage-example strong {
+  text-align: right;
+}
+
+.manage-example .is-total {
+  border-top: 1px solid var(--border);
+  padding-top: 0.3rem;
+  font-weight: 800;
+}
+
+/* ======================================================================
+   Tables floor — the visual language.
+   One colour per stage of a table's evening, always backed by a word:
+     free (green) · take order (amber) · cooking (blue) · food ready (teal, pulses)
+     · eating (violet) · reserved (slate, striped) · late = red edge on any of them.
+   Every fill is mixed from --tone into the surface, so dark mode follows for free.
+   ====================================================================== */
+.tone-free { --tone: #16a34a; }
+.tone-ordering { --tone: #d97706; }
+.tone-cooking { --tone: #2563eb; }
+.tone-ready { --tone: #0d9488; }
+.tone-eating { --tone: #7c3aed; }
+.tone-reserved { --tone: #64748b; }
+
+.ftile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 148px;
+  padding: 0.95rem 0.95rem 0.85rem;
+  border: 1.5px solid color-mix(in srgb, var(--tone) 38%, var(--border));
+  border-radius: var(--radius-lg, 14px);
+  background: color-mix(in srgb, var(--tone) 7%, var(--surface));
+  box-shadow: inset 0 4px 0 var(--tone);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+}
+
+.ftile:not(:has(.ftile__hit)):is(button):hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 4px 0 var(--tone), 0 8px 20px -12px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+
+.ftile:is(button):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--tone) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.ftile__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ftile__name {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.ftile__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--tone) 16%, var(--surface));
+  color: color-mix(in srgb, var(--tone) 78%, var(--text));
+  white-space: nowrap;
+}
+
+.ftile__seats {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.ftile__seatcount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The table seen from above: chairs along both long sides of a table top. */
+.ftable {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 36px;
+}
+
+.ftable__row {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  min-height: 7px;
+}
+
+.ftable__chair {
+  width: 10px;
+  height: 7px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tone) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, var(--border));
+}
+
+.ftable__chair.is-on {
+  background: var(--tone);
+  border-color: var(--tone);
+}
+
+.ftable__top {
+  height: 14px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--tone) 24%, var(--surface-strong));
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+}
+
+/* Order · Kitchen · Serve · Bill */
+.fsteps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.fsteps__seg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fsteps__bar {
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.fsteps__seg.is-done .fsteps__bar {
+  background: color-mix(in srgb, var(--tone) 50%, var(--surface));
+}
+
+.fsteps__seg.is-now .fsteps__bar {
+  background: var(--tone);
+}
+
+.fsteps__label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fsteps__seg.is-now .fsteps__label {
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+}
+
+.ftile__next {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.ftile__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.45rem;
+  border-top: 1px dashed color-mix(in srgb, var(--tone) 30%, var(--border));
+}
+
+.ftile__next > svg {
+  flex-shrink: 0;
+  margin-top: 0.15em;
+}
+
+.ftile__foot strong {
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.ftile__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: auto;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ftile__waiter {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 22%, var(--surface));
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.ftile__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: auto;
+}
+
+.ftile__actions .btn {
+  flex: 1;
+}
+
+.ftile.tone-reserved {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 10px, color-mix(in srgb, var(--tone) 7%, transparent) 10px 20px),
+    color-mix(in srgb, var(--tone) 5%, var(--surface));
+  cursor: default;
+}
+
+.ftile.is-joined {
+  border-style: dashed;
+  box-shadow: none;
+  min-height: 0;
+}
+
+/* Late is a red edge on top of whatever stage the table is in — "cooking, but 25 minutes". */
+.ftile.is-late {
+  border-color: var(--danger);
+  box-shadow: inset 0 4px 0 var(--danger);
+}
+
+.ftile.is-late .ftile__badge,
+.ftile.is-late .ftile__next {
+  color: var(--text-danger);
+}
+
+.ftile.is-late .ftile__badge {
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+}
+
+.ftile.is-dimmed {
+  opacity: 0.28;
+  filter: saturate(0.4);
+}
+
+/* Food at the pass is the one state that gets worse every minute — it breathes. */
+@media (prefers-reduced-motion: no-preference) {
+  .ftile.tone-ready:not(.is-dimmed):not(.is-joined) {
+    animation: ftile-ready 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes ftile-ready {
+  0%, 100% { box-shadow: inset 0 4px 0 var(--tone), 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent); }
+  50% { box-shadow: inset 0 4px 0 var(--tone), 0 0 0 6px color-mix(in srgb, var(--tone) 0%, transparent); }
+}
+
+@media (max-width: 520px) {
+  .floor-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.6rem;
+  }
+  .ftile {
+    padding: 0.8rem 0.75rem 0.7rem;
+    min-height: 136px;
+  }
+}
+
+/* ---------- The colour key (and filter) ---------- */
+.flegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.9rem;
+}
+
+.flegend__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 34px;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+  background: color-mix(in srgb, var(--tone) 8%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flegend__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.flegend__chip strong {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.flegend__chip.is-zero {
+  opacity: 0.55;
+}
+
+.flegend__chip.is-active {
+  background: var(--tone);
+  border-color: var(--tone);
+  color: #fff;
+  opacity: 1;
+}
+
+.flegend__chip.is-active .flegend__dot {
+  background: #fff;
+}
+
+.flegend__money {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  line-height: 1.15;
+}
+
+.flegend__money span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.flegend__money strong {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Do this now ---------- */
+.faction {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+.faction__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.faction__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.5rem;
+}
+
+.faction__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-md);
+  border: 1.5px solid color-mix(in srgb, var(--tone) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone) 10%, var(--surface));
+  box-shadow: inset 4px 0 0 var(--tone);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.faction__item strong {
+  font-size: var(--fs-md);
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.faction__item span {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.faction__item.is-late {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.faction__item.is-late span {
+  color: var(--text-danger);
+}
+
+/* ---------- The four-picture guide ---------- */
+.fguide {
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.fguide__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.fguide__head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.fguide__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.4rem;
+}
+
+.fguide__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--tone) 8%, var(--surface));
+  border: 1.5px solid color-mix(in srgb, var(--tone) 30%, var(--border));
+  font-size: var(--fs-sm);
+}
+
+.fguide__step span:last-child {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* The arrow between steps: this, then this. */
+.fguide__step:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  right: -1.15rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 800;
+  color: var(--text-faint);
+}
+
+.fguide__num {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.7rem;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+}
+
+.fguide__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tone) 18%, var(--surface));
+  color: color-mix(in srgb, var(--tone) 85%, var(--text));
+}
+
+.fguide__foot {
+  margin: 0.8rem 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+@media (max-width: 760px) {
+  .fguide__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+  .fguide__step:not(:last-child)::after {
+    content: none;
+  }
+}
+
+/* ---------- One table's journey ---------- */
+.fjourney {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 0.9rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-lg, 14px);
+  border: 1.5px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+  background: color-mix(in srgb, var(--tone) 6%, var(--surface));
+}
+
+.fjourney.is-late {
+  border-color: var(--danger);
+}
+
+.fjourney__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.fjourney__step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The line joining one step to the next. */
+.fjourney__step:not(:last-child)::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  min-width: 10px;
+  margin: 0 0.5rem;
+  background: var(--border);
+}
+
+.fjourney__step.is-done:not(:last-child)::after {
+  background: color-mix(in srgb, var(--tone) 60%, var(--surface));
+}
+
+.fjourney__dot {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+}
+
+.fjourney__step.is-done .fjourney__dot {
+  border-color: color-mix(in srgb, var(--tone) 60%, var(--surface));
+  background: color-mix(in srgb, var(--tone) 60%, var(--surface));
+  color: #fff;
+}
+
+.fjourney__step.is-now .fjourney__dot {
+  border-color: var(--tone);
+  background: var(--tone);
+  color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+
+.fjourney__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.fjourney__text strong {
+  font-size: var(--fs-sm);
+}
+
+.fjourney__text small {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fjourney__step.is-now .fjourney__text small {
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+  font-weight: 700;
+}
+
+.fjourney__next {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.fjourney__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.fjourney.is-late .fjourney__hint {
+  color: var(--text-danger);
+}
+
+@media (max-width: 640px) {
+  .fjourney__steps {
+    flex-basis: 100%;
+  }
+  .fjourney__text small {
+    display: none;
+  }
+  .fjourney__step:not(:last-child)::after {
+    margin: 0 0.3rem;
+  }
+  .fjourney__next {
+    flex-basis: 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+}
+
+.printer-all-link {
+  align-self: flex-start;
+  font-size: var(--fs-sm);
+}
+
+/* ---------- Shared tables: one colour per group ----------
+   A group's chairs and its letter chip wear the same colour, so "Group B has the one chair
+   by the wall" is read off the picture. Deliberately not the stage tones — those say what a
+   table needs; these only say who is whose. */
+.g-0 { --gc: #334155; }
+.g-1 { --gc: #db2777; }
+.g-2 { --gc: #ea580c; }
+.g-3 { --gc: #0891b2; }
+.g-4 { --gc: #65a30d; }
+
+.ftable__chair.g-0,
+.ftable__chair.g-1,
+.ftable__chair.g-2,
+.ftable__chair.g-3,
+.ftable__chair.g-4 {
+  background: var(--gc);
+  border-color: var(--gc);
+}
+
+.gchip {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--gc, var(--text-muted));
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* The whole tile is one tap target: a full-size button under the content. The content
+   lets taps fall through to it; only the tile's own extra buttons sit above. */
+.ftile__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border-radius: inherit;
+  cursor: pointer;
+}
+
+.ftile > :not(.ftile__hit) {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.ftile > .ftile__actions,
+.ftile > .ftile__newgroup {
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.ftile:has(.ftile__hit):hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 4px 0 var(--tone), 0 8px 20px -12px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+
+.ftile.is-late:has(.ftile__hit):hover {
+  box-shadow: inset 0 4px 0 var(--danger), 0 8px 20px -12px color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+.ftile__hit:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--tone) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* A quiet second action — most tables have a spare chair, so a loud button on every one
+   would bury the tile's real message. A small text link, still a full 30px tap height. */
+.ftile__newgroup {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.25rem;
+  min-height: 30px;
+  margin: -0.2rem 0 -0.3rem -0.35rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ftile__newgroup:hover {
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  color: color-mix(in srgb, var(--tone) 85%, var(--text));
+}
+
+.ftile__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ftile__group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.25rem 0.4rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tone) 12%, var(--surface));
+  font-size: var(--fs-xs);
+}
+
+.ftile__group-text {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+  /* Two lines, not an ellipsis — "खाना तैयार" cut to "खाना …" hides the one word that matters. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ftile__group strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ftile__group.is-late .ftile__group-text {
+  color: var(--text-danger);
+}
+
+/* ---------- Which group? ---------- */
+.gpick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.gpick__seats {
+  /* Outside any stage tile, so the empty chairs and the table top need a neutral tone. */
+  --tone: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.2rem;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* The picture at a readable size — real sizes, not a transform, so nothing it overlaps. */
+.ftable.is-large {
+  gap: 5px;
+  min-width: 64px;
+}
+
+.ftable.is-large .ftable__row {
+  gap: 6px;
+  min-height: 11px;
+}
+
+.ftable.is-large .ftable__chair {
+  width: 17px;
+  height: 11px;
+  border-radius: 4px;
+}
+
+.ftable.is-large .ftable__top {
+  height: 24px;
+  border-radius: 7px;
+}
+
+.gpick__row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 56px;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1.5px solid color-mix(in srgb, var(--tone) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone) 8%, var(--surface));
+  box-shadow: inset 4px 0 0 var(--tone);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gpick__row.is-late {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.gpick__row .gchip {
+  width: 28px;
+  height: 28px;
+  font-size: var(--fs-sm);
+  border-radius: 8px;
+}
+
+.gpick__text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.gpick__text strong {
+  font-size: var(--fs-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gpick__text small {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.gpick__text span {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+}
+
+.gpick__row.is-late .gpick__text span {
+  color: var(--text-danger);
+}
+
+.gpick__money {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gpick__money small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.gpick__new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 48px;
+  border-radius: var(--radius-md);
+  border: 1.5px dashed var(--border-strong);
+  background: transparent;
+  color: var(--brand-text);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ---------- New group at a busy table ---------- */
+.share-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+  padding: 1rem 0.8rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+}
+
+.share-preview .ftable {
+  --tone: #64748b;
+}
+
+.share-preview__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 0.9rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.share-preview__legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.share-preview__legend .is-new {
+  font-weight: 800;
+}
+
+.share-preview__free {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.share-count .guest-count-value {
+  min-width: 40px;
+  font-size: var(--fs-lg);
+}
+
+/* ---------- Other groups at the open table ---------- */
+.group-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.9rem;
+}
+
+.group-switch__label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.group-switch__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 34px;
+  padding: 0.25rem 0.7rem 0.25rem 0.3rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.group-switch__chip.is-current {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  font-weight: 800;
+}
+
+.group-switch__chip strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Manage tables: delete & read-only ---------- */
+.manage-service.is-danger {
+  margin-top: 0.7rem;
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface));
+}
+
+.manage-service.is-danger .dropdown,
+.manage-service.is-danger .dropdown-field {
+  margin-top: 0.5rem;
+}
+
+.manage-locked {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.manage-locked svg {
+  flex-shrink: 0;
+  margin-top: 0.1em;
+}
+
+.manage-table:disabled {
+  cursor: default;
+}
+
+.manage-table:disabled:hover {
+  border-color: var(--border);
+}
+
+/* ==========================================================================
+   Expenses (kharcha) — a page meant to be understood in one minute.
+   Read top to bottom it answers three questions in order: how much went out
+   (and is that more than usual), where it went and how it was paid, and then
+   the entries themselves, grouped by day like a rokad bahi. Colour is data
+   here: --viz-1..5 name the five biggest categories and the same colour is
+   used for the stacked bar, its legend rows and the dot on every entry.
+   ========================================================================== */
+
+.xp-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  overflow: visible;
+}
+
+.xp-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.xp-eyebrow,
+.xp-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.xp-eyebrow-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: var(--text-danger);
+  background: color-mix(in srgb, var(--text-danger) 12%, transparent);
+}
+
+.xp-hero-figure {
+  font-size: var(--fs-4xl);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.xp-compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-strong);
+}
+
+/* More kharcha than last time is the warning; less is the good news. */
+.xp-compare.is-up {
+  color: var(--text-danger);
+  background: color-mix(in srgb, var(--text-danger) 11%, transparent);
+}
+
+.xp-compare.is-down {
+  color: var(--text-success);
+  background: color-mix(in srgb, var(--text-success) 11%, transparent);
+}
+
+.xp-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.xp-hero-meta span + span::before {
+  content: '·';
+  margin-right: 0.9rem;
+  color: var(--text-faint);
+}
+
+.xp-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+.xp-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  min-width: 0;
+}
+
+.xp-mini-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.xp-mini-value {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Kharcha over time: thin bars, rounded at the data end, anchored to a baseline. */
+.xp-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--border);
+}
+
+.xp-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 150px;
+  flex: 1 1 auto;
+  min-height: 120px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.xp-bar-slot {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+}
+
+.xp-bar {
+  width: 100%;
+  max-width: 22px;
+  border-radius: 4px 4px 0 0;
+  background: var(--viz-ramp-2);
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+
+.xp-bar.is-zero {
+  height: 2px;
+  opacity: 0.35;
+  background: var(--text-faint);
+}
+
+.xp-bar.is-peak {
+  opacity: 1;
+}
+
+.xp-bar-slot:hover .xp-bar {
+  opacity: 1;
+}
+
+.xp-bars-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.xp-bars-peak {
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.xp-trend-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.xp-amount-input input::-webkit-outer-spin-button,
+.xp-amount-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.xp-amount-input input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ---- Where it went / how it was paid ---- */
+
+.xp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 1.15rem;
+  align-items: start;
+  margin-bottom: 1.15rem;
+}
+
+.xp-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.xp-grid > .panel,
+.xp-side > .panel {
+  margin-bottom: 0;
+}
+
+.xp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  min-width: 0;
+}
+
+.xp-story {
+  margin: 0 0 0.85rem;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.xp-stack {
+  display: flex;
+  gap: 2px;
+  height: 16px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.xp-stack-seg {
+  min-width: 6px;
+  flex-basis: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.xp-stack-seg.is-rest {
+  background: var(--text-faint);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.xp-stack:has(.xp-stack-seg.active) .xp-stack-seg:not(.active) {
+  opacity: 0.3;
+}
+
+.xp-cat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.xp-cat-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1.3fr) minmax(40px, 1fr) 5.5rem 2.6rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.xp-cat-row:hover {
+  background: var(--surface-strong);
+}
+
+.xp-cat-row.active {
+  background: color-mix(in srgb, var(--brand) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+/* The category's picture on a wash of its data colour. The glyph keeps text ink so it
+   reads the same on every theme; only the wash and the edge carry the colour. */
+.xp-cat-icon {
+  --xp-c: var(--text-faint);
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 9px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--xp-c) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--xp-c) 38%, transparent);
+}
+
+.xp-cat-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.xp-cat-count {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xp-cat-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.xp-cat-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.xp-cat-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.xp-cat-share {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.xp-hint {
+  margin: 0.6rem 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.xp-how-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+}
+
+.xp-how-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--surface-strong);
+}
+
+.xp-how-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.xp-how-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.xp-how-top strong {
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.xp-how-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.xp-how-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.xp-how-fill.is-cash { background: var(--viz-4); }
+.xp-how-fill.is-other { background: var(--viz-1); }
+
+.xp-how-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+}
+
+.xp-mode-chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.xp-mode-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.xp-mode-chip.active {
+  color: var(--brand-text);
+  border-color: color-mix(in srgb, var(--brand) 40%, transparent);
+  background: color-mix(in srgb, var(--brand) 9%, transparent);
+}
+
+.xp-due {
+  border-color: color-mix(in srgb, var(--text-warning) 35%, var(--border));
+}
+
+.xp-due .panel-head h2 svg {
+  color: var(--text-warning);
+}
+
+.xp-due .xp-hint {
+  margin: -0.4rem 0 0.6rem;
+}
+
+.xp-due-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.xp-due-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.xp-due-row:first-child {
+  border-top: 0;
+}
+
+.xp-due-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  font-size: var(--fs-base);
+}
+
+.xp-due-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Quick add + entries ---- */
+
+.xp-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.2rem 0 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.xp-quick-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.7rem;
+  font-size: var(--fs-base);
+}
+
+.xp-quick-head span {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.xp-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.xp-quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 34px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.xp-quick-chip svg {
+  color: var(--text-muted);
+}
+
+.xp-quick-chip:hover {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  background: color-mix(in srgb, var(--brand) 6%, transparent);
+}
+
+.xp-quick-chip.is-income svg {
+  color: var(--text-success);
+}
+
+.xp-filtered-total {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.xp-days {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.xp-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.xp-day-total {
+  display: inline-flex;
+  gap: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.xp-day-total .amount-out {
+  color: var(--text);
+}
+
+.xp-entry {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto 72px;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.xp-entry:last-child {
+  border-bottom: 0;
+}
+
+.xp-entry .xp-cat-icon {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  border-radius: 10px;
+}
+
+.xp-entry-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.xp-entry-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: var(--fs-base);
+  min-width: 0;
+}
+
+.xp-entry-tag {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--text-warning);
+  background: color-mix(in srgb, var(--text-warning) 13%, transparent);
+}
+
+.xp-entry-sub {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xp-entry-mode {
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-strong);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Kharcha is what this page is made of, so it is not painted red fifty times down the
+   list — the minus sign says it. Only money coming in gets a colour. */
+.xp-entry-amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  min-width: 6.5rem;
+}
+
+.xp-entry-amount.amount-out {
+  color: var(--text);
+}
+
+.xp-entry-actions {
+  display: flex;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .xp-entry-actions {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .xp-entry:hover .xp-entry-actions,
+  .xp-entry:focus-within .xp-entry-actions {
+    opacity: 1;
+  }
+  .xp-entry:hover {
+    background: color-mix(in srgb, var(--surface-strong) 60%, transparent);
+  }
+}
+
+/* ---- The add/edit form ---- */
+
+.xp-amount-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.xp-amount-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.xp-amount-input input {
+  flex: 1;
+  min-width: 0;
+  height: 54px;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.xp-amount-input.is-income {
+  color: var(--text-success);
+}
+
+.xp-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 0.4rem;
+}
+
+.xp-cat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 64px;
+  padding: 0.5rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.xp-cat-tile svg {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.xp-cat-tile span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.xp-cat-tile:hover {
+  border-color: var(--border-strong);
+}
+
+.xp-cat-tile.active {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.xp-cat-tile.active svg {
+  color: var(--text);
+}
+
+.xp-cat-tile.is-new {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+.xp-mode-picker {
+  margin-bottom: 0;
+}
+
+/* ---- Narrow screens ---- */
+
+@media (max-width: 1100px) {
+  .xp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .xp-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.1rem;
+  }
+  .xp-trend {
+    padding-left: 0;
+    padding-top: 1rem;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .xp-bars {
+    height: 110px;
+    min-height: 110px;
+  }
+}
+
+@media (max-width: 640px) {
+  .xp-hero-figure {
+    font-size: var(--fs-3xl);
+  }
+  .xp-cat-row {
+    grid-template-columns: 30px minmax(0, 1fr) 5.5rem 2.4rem;
+    gap: 0.6rem;
+  }
+  .xp-cat-track {
+    display: none;
+  }
+  .xp-entry {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "icon main amount"
+      "icon main actions";
+    row-gap: 0.15rem;
+    column-gap: 0.7rem;
+  }
+  .xp-entry > .xp-cat-icon { grid-area: icon; }
+  .xp-entry-main { grid-area: main; }
+  .xp-entry-amount { grid-area: amount; min-width: 0; }
+  .xp-entry-actions { grid-area: actions; }
+  .xp-entry-mode { display: none; }
+  .xp-filtered-total {
+    margin-left: 0;
+    width: 100%;
+  }
+  .xp-cat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------- The drawn table (top-down SVG) ----------
+   Colours come from the tile's --tone (or a group's --gc), so the same drawing reads right
+   on every stage, in light and dark mode. Size is set by height; width follows the table. */
+.tview {
+  display: block;
+  flex-shrink: 0;
+  height: 54px;
+  width: auto;
+  overflow: visible;
+  filter: drop-shadow(0 1px 1.5px rgba(15, 23, 42, 0.14));
+}
+
+.tview.is-large {
+  height: 118px;
+}
+
+.tv-stop-a {
+  stop-color: color-mix(in srgb, var(--tone, #64748b) 16%, var(--surface));
+}
+
+.tv-stop-b {
+  stop-color: color-mix(in srgb, var(--tone, #64748b) 34%, var(--surface-strong));
+}
+
+.tv-top {
+  stroke: color-mix(in srgb, var(--tone, #64748b) 45%, var(--border));
+  stroke-width: 1;
+}
+
+.tv-shine {
+  fill: #fff;
+  opacity: 0.35;
+}
+
+.tv-seat {
+  fill: var(--surface);
+  stroke: color-mix(in srgb, var(--tone, #64748b) 38%, var(--border));
+  stroke-width: 1;
+}
+
+.tv-back {
+  fill: color-mix(in srgb, var(--tone, #64748b) 32%, var(--border));
+}
+
+.tv-chair.is-on .tv-seat {
+  fill: var(--tone, #64748b);
+  stroke: color-mix(in srgb, var(--tone, #64748b) 80%, #000);
+}
+
+.tv-chair.is-on .tv-back {
+  fill: color-mix(in srgb, var(--tone, #64748b) 68%, #000);
+}
+
+/* A group at a shared table: its own colour, same as its letter chip. */
+.tv-chair.is-on.g-0 .tv-seat,
+.tv-chair.is-on.g-1 .tv-seat,
+.tv-chair.is-on.g-2 .tv-seat,
+.tv-chair.is-on.g-3 .tv-seat,
+.tv-chair.is-on.g-4 .tv-seat {
+  fill: var(--gc);
+  stroke: color-mix(in srgb, var(--gc) 80%, #000);
+}
+
+.tv-chair.is-on.g-0 .tv-back,
+.tv-chair.is-on.g-1 .tv-back,
+.tv-chair.is-on.g-2 .tv-back,
+.tv-chair.is-on.g-3 .tv-back,
+.tv-chair.is-on.g-4 .tv-back {
+  fill: color-mix(in srgb, var(--gc) 68%, #000);
+}
+
+/* Someone sitting there, seen from above. */
+.tv-head {
+  fill: #fff;
+  opacity: 0.92;
+}
+
+.tv-plate {
+  fill: var(--surface);
+  stroke: color-mix(in srgb, var(--tone, #64748b) 35%, var(--border));
+  stroke-width: 0.9;
+}
+
+@media (max-width: 520px) {
+  .tview {
+    height: 40px;
+  }
+}
+
+/* The cost of food made and then cancelled, under the table-use chart. */
+.analytics-waste {
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, var(--border));
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+/* ---------- Order changes after the KOT ----------
+   Where the kitchen has got to with a dish decides whether it can still change, so the
+   waiter's ticket says it in colour and words. */
+.ticket-line__status.kstate-unsent { background: color-mix(in srgb, #d97706 14%, var(--surface)); color: color-mix(in srgb, #d97706 80%, var(--text)); }
+.ticket-line__status.kstate-queued,
+.ticket-line__status.kstate-pending { background: color-mix(in srgb, #2563eb 12%, var(--surface)); color: color-mix(in srgb, #2563eb 80%, var(--text)); }
+.ticket-line__status.kstate-preparing { background: color-mix(in srgb, #ea580c 14%, var(--surface)); color: color-mix(in srgb, #ea580c 80%, var(--text)); }
+.ticket-line__status.kstate-ready { background: color-mix(in srgb, #0d9488 14%, var(--surface)); color: color-mix(in srgb, #0d9488 80%, var(--text)); }
+.ticket-line__status.kstate-served { background: color-mix(in srgb, #7c3aed 12%, var(--surface)); color: color-mix(in srgb, #7c3aed 80%, var(--text)); }
+.ticket-line__status.kstate-changed { background: #fef08a; color: #713f12; }
+.ticket-line__status.kstate-asked { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); color: var(--text-danger); }
+
+/* On the kitchen screen: a changed dish shouts "CHANGED" in highlighter yellow — the one
+   colour nothing else on the board uses — with the old quantity struck through. */
+.kds-change {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: #fef08a;
+  color: #713f12;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.kds-change strong {
+  letter-spacing: 0.05em;
+}
+
+.kds-change s {
+  opacity: 0.7;
+}
+
+.kds-change b {
+  font-size: var(--fs-md);
+}
+
+.kds-card.is-changed,
+.kds-ticket__item.is-changed {
+  box-shadow: inset 4px 0 0 #eab308;
+}
+
+.kds-card.is-asked,
+.kds-ticket__item.is-asked {
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.kds-cancel-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.35rem 0.5rem 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border: 1.5px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--text-danger);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.kds-cancel-ask__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Kitchen alerts by kind: a change is yellow, a cancel request red-bordered, a void red. */
+.kds-void-alert.is-changed {
+  border-color: #eab308;
+  background: #fef9c3;
+  color: #713f12;
+}
+
+.kds-void-alert.is-asked {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+/* The correction slip: a cancelled dish is struck through so it can't be read as an order. */
+.kot-ticket .kt-item.is-cancelled .kt-item-name {
+  text-decoration: line-through;
+}
+
+.kot-ticket .kt-item.is-cancelled .kt-item-name strong {
+  text-decoration: none;
+  display: inline-block;
+  margin-right: 1mm;
+}
+
+/* ---------- Table designer (Manage tables → a table) ----------
+   The drawing in the middle and a +/− on the side of the drawing it changes: "top" sits
+   above the table, "left" to its left. Pointing at the side IS the instruction. */
+.tdesign {
+  --tone: #2563eb;
+}
+
+.tdesign__shapes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+}
+
+.tdesign__shape {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.3rem 0.45rem;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  cursor: pointer;
+  --tone: #64748b;
+}
+
+.tdesign__shape .tview {
+  height: 34px;
+}
+
+.tdesign__shape.active {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--brand-text);
+  --tone: #2563eb;
+}
+
+.tdesign__stage {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0.5rem;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--tone) 6%, transparent), transparent 70%),
+    var(--surface-strong);
+  border: 1px solid var(--border);
+}
+
+.tdesign__stage.has-sides {
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    ". top ."
+    "left preview right"
+    ". bottom .";
+}
+
+.tdesign__stage.has-sides .tdesign__preview { grid-area: preview; }
+.tdesign__side.is-top { grid-area: top; }
+.tdesign__side.is-bottom { grid-area: bottom; }
+.tdesign__side.is-left { grid-area: left; }
+.tdesign__side.is-right { grid-area: right; }
+
+.tdesign__preview {
+  display: grid;
+  place-items: center;
+  min-height: 130px;
+}
+
+.tdesign__preview .tview.is-large {
+  height: auto;
+  max-height: 170px;
+  max-width: 100%;
+  min-height: 110px;
+}
+
+.tdesign__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.tdesign__side small {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.tdesign__total {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0.6rem 0 0.3rem;
+  font-size: var(--fs-md);
+}
+
+@media (max-width: 480px) {
+  .tdesign__stage.has-sides {
+    padding: 0.7rem 0.2rem;
+    gap: 0.3rem;
+  }
+  .tdesign__side .qty-control button {
+    width: 30px;
+  }
+}
+
+/* Every table in the Manage overview drawn as it really is. */
+.manage-table__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+  --tone: #64748b;
+}
+
+.manage-table__top .tview {
+  height: 28px;
+  filter: none;
+}
+
+/* ---------- Menu search on a table ----------
+   One box, not a box inside a panel inside a bar: the icon sits in the field, and while
+   searching it carries its own count and a clear button. */
+.menu-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 46px;
+  margin-bottom: 0.7rem;
+  padding: 0 0.45rem 0 0.9rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-muted);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.menu-search:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 16%, transparent);
+  color: var(--brand-text);
+}
+
+.menu-search input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+
+.menu-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.menu-search__count {
+  flex-shrink: 0;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.menu-search__clear {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.menu-search__clear:hover {
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--text-danger);
+}
+
+.menu-search__hint {
+  margin: -0.35rem 0 0.6rem 0.9rem;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ---------- The table drawn large inside its floor tile ---------- */
+.ftile__stage {
+  position: relative;
+  justify-content: center;
+  min-height: 84px;
+  padding: 0.55rem 0.4rem;
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--tone) 10%, transparent), transparent 72%),
+    color-mix(in srgb, var(--tone) 4%, var(--surface-strong));
+}
+
+.ftile__stage .tview {
+  height: 66px;
+  max-width: 100%;
+}
+
+.ftile__stage .ftile__seatcount {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.ftile__stage .ftile__waiter {
+  position: absolute;
+  left: 0.35rem;
+  top: 0.3rem;
+}
+
+.ftile.is-joined .ftile__stage,
+.ftile.tone-reserved .ftile__stage {
+  min-height: 72px;
+}
+
+@media (max-width: 520px) {
+  .ftile__stage {
+    min-height: 74px;
+  }
+  .ftile__stage .tview {
+    height: 56px;
+  }
+}
+
+/* ---------- The floor from above ----------
+   Every table where it stands, drawn with its own shape and chairs and coloured by what it
+   needs — the view a host at the door reads the whole room from. */
+.floor-view-toggle {
+  margin: 0 0 0.9rem;
+  width: max-content;
+}
+
+.fmap {
+  position: relative;
+  width: 100%;
+  height: clamp(380px, 62vh, 620px);
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1.4px) 0 0 / 22px 22px,
+    linear-gradient(180deg, var(--surface-strong), var(--surface));
+  overflow: hidden;
+}
+
+.fmap__table {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.4rem 0.3rem;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+.fmap__table:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+  z-index: 2;
+}
+
+.fmap__table:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.fmap__table .tview {
+  height: 70px;
+}
+
+.fmap__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.12rem 0.5rem 0.12rem 0.35rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1.5px solid color-mix(in srgb, var(--tone) 45%, var(--border));
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.fmap__label strong {
+  font-size: var(--fs-sm);
+}
+
+.fmap__label small {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.fmap__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.fmap__table.is-late .fmap__label {
+  border-color: var(--danger);
+}
+
+.fmap__table.is-late .fmap__dot {
+  background: var(--danger);
+}
+
+.fmap__table.is-dimmed {
+  opacity: 0.25;
+  filter: saturate(0.3);
+}
+
+.fmap__table.is-joined .fmap__label {
+  border-style: dashed;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fmap__table.tone-ready:not(.is-dimmed) .fmap__dot {
+    animation: fmap-ready 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes fmap-ready {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 55%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--tone) 0%, transparent); }
+}
+
+.fmap-hint {
+  margin: 0.5rem 0 0;
+}
+
+@media (max-width: 520px) {
+  .fmap {
+    height: 460px;
+  }
+  .fmap__table .tview {
+    height: 50px;
+  }
+}
+
+/* Manage tables → Arrange on map: each chip is the real table. */
+.floor-layout-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  --tone: #64748b;
+}
+
+.floor-layout-chip .tview {
+  height: 48px;
+  pointer-events: none;
+}
+
+/* Tables are drawn at a true scale (TableSeats `scale`), never stretched to one height —
+   the size of the drawing IS the size of the table. These only stop a very long table
+   overflowing a narrow tile. Last in the file on purpose: it overrides the fixed heights. */
+.tview,
+.tview.is-large,
+.ftile__stage .tview,
+.fmap__table .tview,
+.tdesign__shape .tview,
+.manage-table__top .tview,
+.floor-layout-chip .tview {
+  height: auto;
+  max-width: 100%;
+}
+
+.tdesign__preview .tview.is-large {
+  max-height: 180px;
+  min-height: 0;
+  width: auto;
+}
+
+/* The map's tables are placed inside an inset "room", so a table centred on the edge of
+   the layout still has its chairs and name fully on screen. Height follows how many rows
+   the layout has, so one row of tables is not a tall strip of empty floor. */
+.fmap {
+  height: auto;
+  min-height: 0;
+}
+
+.fmap__room {
+  position: relative;
+  margin: 64px 84px 58px;
+  height: 300px;
+}
+
+.fmap.rows-1 .fmap__room { height: 0; margin-top: 70px; margin-bottom: 70px; }
+.fmap.rows-2 .fmap__room { height: 190px; }
+.fmap.rows-3 .fmap__room { height: 320px; }
+.fmap.rows-4 .fmap__room { height: 440px; }
+
+@media (max-width: 520px) {
+  .fmap {
+    height: auto;
+  }
+  .fmap__room {
+    margin: 52px 46px 46px;
+  }
+  .fmap.rows-2 .fmap__room { height: 220px; }
+  .fmap.rows-3 .fmap__room { height: 340px; }
+  .fmap.rows-4 .fmap__room { height: 460px; }
+}
+
+/* A table placed near the right edge must not be squeezed by it: an absolutely placed
+   button shrinks to the room left of its left edge, and the drawing shrank with it. */
+.fmap__table {
+  width: max-content;
+}
+
+.fmap__table .tview {
+  max-width: none;
+}
+
+.fmap__room {
+  margin-top: 70px;
+  margin-bottom: 76px;
+}
+
+/* On a phone the whole room still has to fit side by side: the drawings come down to a
+   size where four tables in a row do not sit on each other. */
+@media (max-width: 520px) {
+  .fmap__table {
+    padding: 0.2rem;
+  }
+  .fmap__table .tview {
+    max-width: 58px;
+    max-height: 58px;
+    width: auto;
+  }
+  .fmap__label {
+    padding: 0.05rem 0.4rem 0.05rem 0.28rem;
+  }
+  .fmap__label strong {
+    font-size: var(--fs-xs);
+  }
+  .fmap__label small {
+    display: none;
+  }
+  .fmap__room {
+    margin: 56px 40px 60px;
+  }
+}
+
+/* ---------- Ordering by chair ----------
+   The table drawn large above the menu; each chair is a button with its number on it. */
+.seatpick {
+  --tone: #2563eb;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(ellipse at 30% 50%, color-mix(in srgb, var(--tone) 8%, transparent), transparent 70%),
+    var(--surface-strong);
+}
+
+.seatpick.has-seat {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--border));
+}
+
+.seatpick__stage {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  max-width: 55%;
+}
+
+.seatpick__stage .tview {
+  max-height: 150px;
+  width: auto;
+}
+
+.seatpick__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.seatpick__side strong {
+  font-size: var(--fs-md);
+}
+
+.seatpick__now {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.seatpick.has-seat .seatpick__now {
+  color: var(--brand-text);
+}
+
+.seatpick__side small {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.tv-chair.is-pickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.tv-hit {
+  fill: transparent;
+}
+
+.tv-num {
+  font: 800 6.6px/1 system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+  fill: color-mix(in srgb, var(--tone) 70%, var(--text));
+  pointer-events: none;
+}
+
+.tv-chair.is-pickable.has-dishes .tv-seat {
+  fill: color-mix(in srgb, var(--tone) 28%, var(--surface));
+}
+
+.tv-chair.is-pickable:hover .tv-seat,
+.tv-chair.is-pickable:focus-visible .tv-seat {
+  stroke: var(--brand);
+  stroke-width: 1.6;
+}
+
+.tv-chair.is-pickable.is-selected .tv-seat {
+  fill: var(--brand);
+  stroke: var(--brand);
+}
+
+.tv-chair.is-pickable.is-selected .tv-back {
+  fill: color-mix(in srgb, var(--brand) 70%, #000);
+}
+
+.tv-chair.is-pickable.is-selected .tv-num {
+  fill: #fff;
+}
+
+.tv-chair.is-pickable.is-selected .tv-hit {
+  fill: color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.tv-count {
+  fill: var(--danger);
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+
+.tv-count-text {
+  font: 800 5.4px/1 system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+  fill: #fff;
+  pointer-events: none;
+}
+
+/* The ticket, grouped the way food is served: chair by chair. */
+.ticket-seat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  margin: 0.45rem 0 0.1rem;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ticket-seat-head:disabled {
+  cursor: default;
+}
+
+.ticket-seat-head small {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ticket-seat-head.is-picked {
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  color: var(--brand-text);
+}
+
+.ticket-seat-head__chip,
+.seat-chip,
+.kds-seat {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.3rem;
+  border-radius: 6px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.seat-chip {
+  margin-right: 0.35rem;
+  border: 0;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.seat-chip.is-table,
+.ticket-seat-head:disabled .ticket-seat-head__chip {
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+}
+
+.kds-seat {
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.kot-ticket .kt-seat {
+  font-weight: 800;
+}
+
+@media (max-width: 520px) {
+  .seatpick {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .seatpick__stage {
+    max-width: 100%;
+  }
+  .seatpick__side {
+    align-items: center;
+  }
+}
+
+/* ---------- Arranging the floor map ---------- */
+.fmap-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-strong);
+  background: var(--surface-strong);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.fmap-edit-bar.is-on {
+  border-style: solid;
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  color: var(--brand-text);
+  font-weight: 600;
+}
+
+.fmap.is-editing {
+  border: 2px dashed color-mix(in srgb, var(--brand) 55%, var(--border));
+  background:
+    linear-gradient(color-mix(in srgb, var(--brand) 12%, transparent) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, color-mix(in srgb, var(--brand) 12%, transparent) 1px, transparent 1px) 0 0 / 28px 28px,
+    var(--surface);
+}
+
+.fmap.is-editing .fmap__table {
+  cursor: grab;
+  touch-action: none;
+  outline: 1.5px dashed color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.fmap.is-editing .fmap__table:hover {
+  transform: translate(-50%, -50%);
+}
+
+.fmap__table.is-dragging {
+  cursor: grabbing;
+  z-index: 5;
+  transition: none;
+  outline-style: solid;
+  box-shadow: 0 12px 28px -10px rgba(15, 23, 42, 0.35);
+}
+
+/* What the table needs and owes, under its name. */
+.fmap__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--tone) 80%, var(--text));
+  white-space: nowrap;
+}
+
+.fmap__status b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.fmap__table.is-late .fmap__status {
+  color: var(--text-danger);
+}
+
+@media (max-width: 520px) {
+  .fmap__status {
+    font-size: 0.6rem;
+  }
+  .fmap__status b {
+    display: none;
+  }
+}
+
+/* The card above the floor map: what the view is, what to do, and the arrange switch. */
+.fmap-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.7rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+}
+
+.fmap-bar.is-on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.fmap-bar__icon {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  color: var(--brand-text);
+}
+
+.fmap-bar__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.fmap-bar__text strong {
+  font-size: var(--fs-md);
+}
+
+.fmap-bar__text small {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.fmap-bar.is-on .fmap-bar__text small {
+  color: var(--brand-text);
+}
+
+.fmap-bar .btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 520px) {
+  .fmap-bar {
+    flex-wrap: wrap;
+  }
+  .fmap-bar .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* The floor map sizes itself from its biggest table (FloorMap sets these) — fixed margins
+   cut large tables in half. Last in the file so it wins over the earlier rows-N sizes. */
+.fmap .fmap__room {
+  margin: var(--pad-t, 70px) var(--pad-x, 84px) var(--pad-b, 76px);
+  height: var(--room-h, 300px);
+}
+
+/* On a phone the drawings are capped at 58px (see above), so the room needs far less
+   space round the edge than the full-size measurement says. */
+@media (max-width: 520px) {
+  .fmap .fmap__room {
+    margin: 44px 40px 72px;
+    height: max(calc(var(--room-h, 300px) * 0.6), 0px);
+  }
+}
+
+/* Padding on the map, not margins on the room. With one row of tables the room is 0px
+   tall, and an empty 0px block lets its top and bottom margins collapse into one — the
+   space above the tables vanished and big tables were cut in half. Padding never collapses. */
+.fmap {
+  display: flow-root;
+  padding: var(--pad-t, 70px) var(--pad-x, 84px) var(--pad-b, 76px);
+}
+
+.fmap .fmap__room {
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .fmap {
+    padding: 44px 40px 72px;
+  }
+  .fmap .fmap__room {
+    margin: 0;
+  }
+}
+
+/* Phone: drawings are capped at 58px, and each table button (drawing + name + status) is
+   about 110px tall, centred on its spot — so half of that is the room round the edge. */
+@media (max-width: 520px) {
+  .fmap {
+    padding: 64px 42px 64px;
+  }
+}
+
+@media (max-width: 520px) {
+  .fmap .fmap__room {
+    height: max(calc(var(--room-h, 300px) * 0.78), 0px);
+  }
+}
+
+/* Chairs picked together for a dish they share — the heading and chip say "1+3". */
+.ticket-seat-head.is-shared .ticket-seat-head__chip,
+.seatpick.has-many .seatpick__now {
+  letter-spacing: 0.02em;
+}
+
+.ticket-seat-head.is-shared .ticket-seat-head__chip {
+  background: #7c3aed;
+}
+
+/* Choosing the chairs a party sat on, in the seat and new-group popups. */
+.seat-choose {
+  --tone: #2563eb;
+  margin-top: 0.8rem;
+}
+
+.seat-choose__row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+}
+
+.seat-choose__row .tview {
+  max-height: 140px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.seat-choose__text {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.share-preview .tview.is-picker {
+  max-height: 170px;
+  width: auto;
+}
+
+/* A chair another group is on: shown in their colour, but it is not a button. */
+.tv-chair.is-locked {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.tv-chair.is-locked .tv-num {
+  fill: #fff;
+}
+
+.tv-chair.is-locked:not(.is-on) .tv-num {
+  fill: var(--text-faint);
+}
+
+@media (max-width: 520px) {
+  .seat-choose__row {
+    flex-direction: column;
+    text-align: center;
   }
 }

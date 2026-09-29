@@ -250,10 +250,10 @@ export default function RegisterSellerPage() {
          only its password and its Google account to get back in with. The server refuses
          the sign-up over it too, and a refusal at that point loses the whole form. */
       if (phoneProblem) return phoneProblem;
-      /* The address stays optional here — a wizard that stops on a pincode is a wizard that
-         does not finish — but whatever HAS been typed has to be an address, because the
-         server refuses the sign-up over it and a refusal at that point loses the whole form.
-         Same rule file the API enforces: lib/addressRules.js. */
+      /* Required: this address goes on the first bill the shop prints, and its PIN code is
+         what decides the state — and so CGST+SGST or IGST — on every one after it. The box
+         makes it one tap (location) or six digits (PIN code) and points at the exact box
+         that is missing. Same rule file the API enforces: lib/addressRules.js. */
       if (addrProblem) return addressErrorText(addrProblem.code, t);
       if (!acceptTerms) return t('register.needTerms');
     }
@@ -326,7 +326,13 @@ export default function RegisterSellerPage() {
 
       finishSignup(data);
     } catch (err) {
-      setError(apiErrorMessage(lang, err));
+      // An address refusal names the box it is about — say it in the shopkeeper's language
+      // and light that box up, instead of a raw code at the top of the form.
+      const reason = err?.reason || err?.data?.reason;
+      const field = err?.field || err?.data?.field;
+      const addrText = field === 'shopAddress' && reason ? addressErrorText(reason, t) : '';
+      if (addrText) setShowAddrErrors(true);
+      setError(addrText || apiErrorMessage(lang, err));
       setLoading(false);
     }
   }
@@ -658,10 +664,10 @@ export default function RegisterSellerPage() {
                   autoComplete="tel"
                   required
                 />
-                {/* Optional here, as it always was — a signup that stops on a pincode is a
-                    signup that does not finish. But the shopkeeper is standing in the shop
-                    while they fill this, so one tap on the location button writes down more
-                    than most of them would ever have typed. */}
+                {/* Required — it is printed on every bill and its PIN code sets the GST state.
+                    The shopkeeper is usually standing in the shop while filling this, so one
+                    tap on the location button writes down most of it; the PIN code and the
+                    area/post office are the parts the box then asks for by name. */}
                 <AddressField
                   id="shopAddress"
                   label={t('register.shopAddress')}
@@ -670,6 +676,7 @@ export default function RegisterSellerPage() {
                   onValidity={setAddrProblem}
                   showErrors={showAddrErrors}
                   maxLength={200}
+                  required
                 />
                 {/* Opens in a new tab on purpose: a half-filled wizard must survive somebody
                     actually reading what they are agreeing to. */}

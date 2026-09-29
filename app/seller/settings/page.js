@@ -51,6 +51,7 @@ import ScreenPicker from '../../components/ScreenPicker';
 import TextSizePicker from '../../components/TextSizePicker';
 import ThemeModePicker from '../../components/ThemeModePicker';
 import PushSettings from '../../components/PushSettings';
+import PrinterSettings from '../../components/PrinterSettings';
 import SaveBar, { ChangeReview } from '../../components/SaveBar';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { diffSettings, heavyWarningKey } from '../../../lib/settingsDiff';
@@ -399,6 +400,37 @@ function hydrate(loaded = {}) {
   };
 }
 
+/**
+ * The panel's outside-the-block inputs, for validateStorefront (lib/storefrontRules.js):
+ * the delivery radius and its map pin, and the pause-until time as last saved.
+ */
+function storefrontContext(profile, baseline) {
+  return {
+    deliveryRadiusKm: profile.deliveryRadiusKm,
+    shopLocation: profile.shopLocation,
+    savedPausedUntil: baseline?.storefront?.pausedUntil || null,
+  };
+}
+
+/**
+ * The server names storefront fields by their key; the boxes on this page carry an `sf`
+ * prefix. Without this a refusal the browser did not catch (a stale tab, a rule added on the
+ * server first) landed in the save bar instead of under the box it is about.
+ */
+const SERVER_FIELD_IDS = {
+  minOrderValue: 'sfMinOrderValue',
+  deliveryCharge: 'sfDeliveryCharge',
+  freeDeliveryAbove: 'sfFreeDeliveryAbove',
+  prepTimeMinutes: 'sfPrepTime',
+  openTime: 'sfOpenTime',
+  closeTime: 'sfCloseTime',
+  weeklyOffDays: 'sfWeeklyOff',
+  allowPickup: 'sfAllowPickup',
+  storefrontPausedUntil: 'sfPausedUntil',
+  deliverySlots: 'deliverySlots',
+  deliveryRadiusKm: 'deliveryRadiusKm',
+};
+
 export default function SellerSettingsPage() {
   const { t, lang } = useLanguage();
   const confirm = useConfirm();
@@ -496,13 +528,13 @@ export default function SellerSettingsPage() {
       const keys = Object.keys(current);
       if (!keys.length) return current;
       const stillWrong = new Set(
-        [...validateShopProfile(profile, t), ...validateStorefront(profile.storefront, t)].map((p) => p.fieldId)
+        [...validateShopProfile(profile, t), ...validateStorefront(profile.storefront, t, storefrontContext(profile, baseline))].map((p) => p.fieldId)
       );
       const next = keys.filter((id) => stillWrong.has(id));
       if (next.length === keys.length) return current;
       return Object.fromEntries(next.map((id) => [id, current[id]]));
     });
-  }, [profile, t]);
+  }, [profile, baseline, t]);
 
   useEffect(() => {
     apiFetch('/api/seller/profile')
@@ -534,6 +566,13 @@ export default function SellerSettingsPage() {
     if (loading) return;
     if (typeof window === 'undefined' || window.location.hash !== '#gstin') return;
     jumpToField('gstin');
+  }, [loading]);
+
+  // The counter's printer chip links here ("#printer") when no printer is set up yet.
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window === 'undefined' || window.location.hash !== '#printer') return;
+    requestAnimationFrame(() => document.getElementById('settings-printer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, [loading]);
 
   /**
@@ -741,7 +780,7 @@ export default function SellerSettingsPage() {
      * and is then told about a second has been made to do the work twice. The summary line
      * counts them; the red text under each box says what each one is.
      */
-    const problems = [...validateShopProfile(profile, t), ...validateStorefront(profile.storefront, t)];
+    const problems = [...validateShopProfile(profile, t), ...validateStorefront(profile.storefront, t, storefrontContext(profile, baseline))];
     if (problems.length) {
       setFieldErrors(Object.fromEntries(problems.map((p) => [p.fieldId, p.message])));
       setError(problems.length === 1 ? problems[0].message : t('seller.errFixFields', { count: problems.length }));
@@ -839,7 +878,7 @@ export default function SellerSettingsPage() {
          gets read twice and acted on once. Translated too: this used to print the API's
          own English straight into a dashboard running in Marathi. */
       const message = err.data?.code === 'AUTH_REAUTH_REQUIRED' ? '' : apiErrorMessage(lang, err);
-      const domId = errorField(err);
+      const domId = errorField(err, SERVER_FIELD_IDS);
       if (domId && document.getElementById(domId)) {
         setFieldErrors({ [domId]: message });
         setError('');
@@ -1187,6 +1226,19 @@ export default function SellerSettingsPage() {
       </div>
       )}
 
+      {/* Printers live on this device, not in the shop profile — so this saves itself and
+          sits outside the <form> like the two blocks above. */}
+      {show('printer') && (
+      <div className="panel" id="settings-printer">
+        <div className="section-title">
+          <div className="icon-badge icon-muted"><PrinterIcon size={17} /></div>
+            <h2>{t('printer.title')}</h2>
+        </div>
+        <p className="section-note">{t('printer.hint')}</p>
+        <PrinterSettings />
+      </div>
+      )}
+
       <form onSubmit={handleSave}>
         {show('identity') && (
         <div className="panel" id="settings-identity">
@@ -1398,7 +1450,7 @@ export default function SellerSettingsPage() {
                 />
                 <small className="field-hint">{t('seller.sfPauseNoteHint')}</small>
               </div>
-              <div className="field">
+              <div className={fieldClass('sfPausedUntil')}>
                 <label htmlFor="sfPausedUntil">{t('seller.sfPausedUntil')}</label>
                 <input
                   id="sfPausedUntil"
@@ -1409,7 +1461,7 @@ export default function SellerSettingsPage() {
                 {/* The reason this field exists at all: a shopkeeper who pauses for a wedding
                     and forgets to switch orders back on loses a week of online sales without
                     ever finding out why they stopped. */}
-                <small className="field-hint">{t('seller.sfPausedUntilHint')}</small>
+                {fieldError('sfPausedUntil') || <small className="field-hint">{t('seller.sfPausedUntilHint')}</small>}
               </div>
             </div>
           )}
@@ -1554,7 +1606,7 @@ export default function SellerSettingsPage() {
 
           <div className="form-subhead">{t('seller.sfReachSubhead')}</div>
           <div className="form-grid cols-2">
-            <div className="field">
+            <div className={fieldClass('deliveryRadiusKm')}>
               <label htmlFor="deliveryRadiusKm">{t('seller.deliveryRadiusKm')}</label>
               <input
                 id="deliveryRadiusKm"
@@ -1566,8 +1618,9 @@ export default function SellerSettingsPage() {
                 inputMode="decimal"
                 placeholder="5"
                 disabled={sf.allowDelivery === false}
+                aria-invalid={fieldErrors.deliveryRadiusKm ? 'true' : undefined}
               />
-              <small className="field-hint">{t('seller.deliveryRadiusKmHint')}</small>
+              {fieldError('deliveryRadiusKm') || <small className="field-hint">{t('seller.deliveryRadiusKmHint')}</small>}
             </div>
             <div className="field">
               <label>{t('seller.captureShopLocation')}</label>
@@ -1617,7 +1670,7 @@ export default function SellerSettingsPage() {
           {/* "Main sirf subah aur shaam nikalta hoon." Empty is the shop that delivers
               whenever it can, and then the customer is never asked to choose. */}
           {sf.allowDelivery !== false && (
-            <div className="field" style={{ marginTop: '0.9rem' }}>
+            <div className={fieldClass('deliverySlots')} id="deliverySlots" style={{ marginTop: '0.9rem' }}>
               <label>{t('seller.settingsSlotsTitle')}</label>
               <div className="delivery-slot-rows">
                 {(sf.deliverySlots || []).map((slot, index) => (
@@ -1664,7 +1717,7 @@ export default function SellerSettingsPage() {
           {/* The one mistake this panel cannot catch by itself: a radius means nothing
               without a point to measure from, so a shop that set one and never captured its
               location has a rule that silently never fires. */}
-          {Boolean(profile.deliveryRadiusKm) && !profile.shopLocation && (
+          {Boolean(profile.deliveryRadiusKm) && !profile.shopLocation && !fieldErrors.deliveryRadiusKm && sf.allowDelivery !== false && (
             <p className="field-hint field-hint-warn">{t('seller.sfRadiusNeedsLocation')}</p>
           )}
         </div>

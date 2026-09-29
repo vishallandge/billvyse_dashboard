@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../../../lib/api';
+import { tableErrorText } from '../../../lib/tableErrors';
 import { getActiveStoreId } from '../../../lib/session';
 import { getShopSocket } from '../../../lib/socket';
 import { useDashboardUser } from '../../components/DashboardShell';
@@ -125,7 +126,7 @@ export default function KitchenPage() {
   function load() {
     return apiFetch('/api/seller/table-orders')
       .then((data) => { setOrders(data.orders || []); setLoadError(''); })
-      .catch((err) => setLoadError(err.message));
+      .catch((err) => setLoadError(tableErrorText(err, t)));
   }
 
   useEffect(() => {
@@ -160,20 +161,29 @@ export default function KitchenPage() {
       if (soundRef.current) playBeep(audioRef);
     };
     // A dish the kitchen is already cooking, cancelled at the counter. It has to interrupt.
-    const onVoid = (payload) => {
+    const alertOf = (kind) => (payload) => {
       if (payload.store && getActiveStoreId() && String(payload.store) !== String(getActiveStoreId())) return;
       refresh();
       if (soundRef.current) playBeep(audioRef);
-      setVoidAlerts((list) => [{ ...payload, at: Date.now(), key: `${payload.id}-${Date.now()}` }, ...list]);
+      setVoidAlerts((list) => [{ ...payload, kind, at: Date.now(), key: `${kind}-${payload.id}-${Date.now()}` }, ...list].slice(0, 8));
     };
+    const onVoid = alertOf('voided');
+    // The counter changed a dish the kitchen has not started: "Naan 2 → 1".
+    const onChanged = alertOf('changed');
+    // The counter wants a dish on the pan cancelled — only the kitchen can say if it's too late.
+    const onCancelAsk = alertOf('asked');
     const events = ['connect', 'table:opened', 'table:updated', 'table:settled', 'table:transferred', 'table:merged'];
     events.forEach((e) => socket.on(e, refresh));
     socket.on('kot:sent', onKot);
     socket.on('kitchen:voided', onVoid);
+    socket.on('kitchen:changed', onChanged);
+    socket.on('kitchen:cancel-request', onCancelAsk);
     return () => {
       events.forEach((e) => socket.off(e, refresh));
       socket.off('kot:sent', onKot);
       socket.off('kitchen:voided', onVoid);
+      socket.off('kitchen:changed', onChanged);
+      socket.off('kitchen:cancel-request', onCancelAsk);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -312,7 +322,7 @@ export default function KitchenPage() {
         setLastBumped({ orderId: ticket.order._id, itemIds: [ticket.item._id], from: current, label: ticket.item.name });
       }
     } catch (err) {
-      toast.error(err.message);
+      toast.error(tableErrorText(err, t));
     } finally {
       setBusyId('');
     }
@@ -332,10 +342,29 @@ export default function KitchenPage() {
       });
       setOrders((list) => list.map((o) => (o._id === data.order._id ? data.order : o)));
       if (status === 'served') {
-        setLastBumped({ orderId: group.order._id, itemIds, from: from || 'ready', label: group.order.tableName });
+        setLastBumped({ orderId: group.order._id, itemIds, from: from || 'ready', label: group.order.tableLabel || group.order.tableName });
       }
     } catch (err) {
-      toast.error(err.message);
+      toast.error(tableErrorText(err, t));
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  // "Can you still stop it?" — the kitchen's answer goes straight back to the waiter.
+  async function answerCancel(ticket, decision) {
+    if (busyId || loadError) return;
+    const key = `ask-${ticket.item._id}`;
+    setBusyId(key);
+    try {
+      const data = await apiFetch(`/api/seller/table-orders/${ticket.order._id}/items/${ticket.item._id}/cancel-answer`, {
+        method: 'POST',
+        body: JSON.stringify({ decision }),
+      });
+      setOrders((list) => list.map((o) => (o._id === data.order._id ? data.order : o)));
+      setVoidAlerts((list) => list.filter((a) => !(a.kind === 'asked' && String(a.id) === String(ticket.order._id) && a.name === ticket.item.name)));
+    } catch (err) {
+      toast.error(tableErrorText(err, t));
     } finally {
       setBusyId('');
     }
@@ -352,7 +381,7 @@ export default function KitchenPage() {
       setOrders((list) => list.map((o) => (o._id === data.order._id ? data.order : o)));
       setLastBumped(null);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(tableErrorText(err, t));
     } finally {
       setBusyId('');
     }
@@ -383,22 +412,66 @@ export default function KitchenPage() {
     );
   }
 
+  // What changed since the kitchen last looked: the old quantity struck through, the new
+  // one loud, and a changed note marked as new.
+  function ChangeMark({ item }) {
+    if (!item.amendedAt) return null;
+    const qtyChanged = item.prevQuantity != null && item.prevQuantity !== item.quantity;
+    const noteChanged = (item.prevNote || '') !== (item.note || '');
+    return (
+      <span className="kds-change">
+        <strong>{t('kitchen.changed')}</strong>
+        {qtyChanged && (
+          <span>
+            <s>{item.prevQuantity}</s> → <b>{item.quantity}</b>
+          </span>
+        )}
+        {noteChanged && <span>{t('kitchen.newNote')}: {item.note || '—'}</span>}
+      </span>
+    );
+  }
+
+  function CancelAsk({ ticket }) {
+    const ask = ticket.item.cancelRequest;
+    if (!ask) return null;
+    return (
+      <div className="kds-cancel-ask" role="alert">
+        <span>
+          <strong>{t('kitchen.cancelAsked')}</strong>
+          {ask.reason ? ` — ${ask.reason}` : ''}
+        </span>
+        <span className="kds-cancel-ask__actions">
+          <button type="button" className="btn btn-danger btn-small btn-inline" disabled={!!busyId} onClick={() => answerCancel(ticket, 'stopped')}>
+            {t('kitchen.cancelStopped')}
+          </button>
+          <button type="button" className="btn btn-secondary btn-small btn-inline" disabled={!!busyId} onClick={() => answerCancel(ticket, 'made')}>
+            {t('kitchen.cancelMade')}
+          </button>
+        </span>
+      </div>
+    );
+  }
+
   function ItemCard({ ticket, showTable = true }) {
     const key = `${ticket.order._id}-${ticket.item._id}`;
     const status = ticket.item.kitchenStatus === 'pending' ? 'queued' : ticket.item.kitchenStatus;
     return (
-      <div className={`kds-card ${ageClass(ticket.firedAt, now)}`}>
+      <div className={`kds-card ${ageClass(ticket.firedAt, now)}${ticket.item.amendedAt ? ' is-changed' : ''}${ticket.item.cancelRequest ? ' is-asked' : ''}`}>
         <div className="kds-card-head">
-          {showTable && <span className="kds-card-table">{ticket.order.tableName}</span>}
+          {showTable && <span className="kds-card-table">{ticket.order.tableLabel || ticket.order.tableName}</span>}
           <span className="kds-timer">
             <ClockIcon size={11} /> {formatElapsed(ticket.firedAt, now)}
           </span>
         </div>
         <div className="kds-card-name">
-          <span className="kds-card-qty">{ticket.item.quantity}×</span> {ticket.item.name}
+          <span className="kds-card-qty">{ticket.item.quantity}×</span>
+          {ticket.item.seat || ticket.item.seats?.length ? <span className="kds-seat" title={t('tables.seat.chair', { seat: ticket.item.seats?.length ? ticket.item.seats.join(' + ') : ticket.item.seat })}>{ticket.item.seats?.length ? ticket.item.seats.join('+') : ticket.item.seat}</span> : null}{' '}
+          {ticket.item.name}
         </div>
+        <ChangeMark item={ticket.item} />
         {ticket.order.note && <div className="kds-card-note">{ticket.order.note}</div>}
         {ticket.item.note && <div className="kds-card-note">{ticket.item.note}</div>}
+        <CancelAsk ticket={ticket} />
         <button
           type="button"
           className="btn btn-primary btn-small kds-card-action"
@@ -455,10 +528,27 @@ export default function KitchenPage() {
       {loadError && <div className="panel" role="alert"><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={load}>{t('moduleOpening.retry')}</button></div>}
 
       {voidAlerts.map((alert) => (
-        <div className="kds-void-alert" key={alert.key}>
+        <div className={`kds-void-alert is-${alert.kind || 'voided'}`} key={alert.key}>
           <span>
-            <strong>{t('kitchen.voided')}</strong> {alert.quantity}× {alert.name} · {alert.tableName}
-            {alert.reason ? ` — ${alert.reason}` : ''}
+            {alert.kind === 'changed' ? (
+              <>
+                <strong>{t('kitchen.changedAlert', { table: alert.tableName })}</strong>{' '}
+                {alert.name}
+                {alert.from && alert.to && alert.from.quantity !== alert.to.quantity && <> · <s>{alert.from.quantity}</s> → <b>{alert.to.quantity}</b></>}
+                {alert.from && alert.to && alert.from.note !== alert.to.note && <> · {t('kitchen.newNote')}: {alert.to.note || '—'}</>}
+                {alert.kot ? ` · ${t('tables.kot')} ${alert.kot}` : ''}
+              </>
+            ) : alert.kind === 'asked' ? (
+              <>
+                <strong>{t('kitchen.cancelAskedAlert', { table: alert.tableName })}</strong> {alert.quantity}× {alert.name}
+                {alert.reason ? ` — ${alert.reason}` : ''}
+              </>
+            ) : (
+              <>
+                <strong>{t('kitchen.voided')}</strong> {alert.quantity}× {alert.name} · {alert.tableName}
+                {alert.reason ? ` — ${alert.reason}` : ''}
+              </>
+            )}
           </span>
           <button type="button" onClick={() => setVoidAlerts((list) => list.filter((a) => a.key !== alert.key))}>×</button>
         </div>
@@ -517,7 +607,7 @@ export default function KitchenPage() {
               <div className={`kds-ticket ${ageClass(group.firedAt, now)}`} key={group.order._id}>
                 <div className="kds-ticket__head">
                   <div>
-                    <strong>{group.order.tableName}</strong>
+                    <strong>{group.order.tableLabel || group.order.tableName}</strong>
                     <small>{t('kitchen.itemsCount', { count: group.items.length })}</small>
                   </div>
                   <span className="kds-timer">
@@ -531,7 +621,7 @@ export default function KitchenPage() {
                     const key = `${tk.order._id}-${tk.item._id}`;
                     const status = tk.item.kitchenStatus === 'pending' ? 'queued' : tk.item.kitchenStatus;
                     return (
-                      <li key={tk.item._id} className={`kds-ticket__item is-${status}`}>
+                      <li key={tk.item._id} className={`kds-ticket__item is-${status}${tk.item.amendedAt ? ' is-changed' : ''}${tk.item.cancelRequest ? ' is-asked' : ''}`}>
                         <button
                           type="button"
                           className="kds-ticket__tap"
@@ -541,11 +631,14 @@ export default function KitchenPage() {
                         >
                           <span className="kds-ticket__qty">{tk.item.quantity}×</span>
                           <span className="kds-ticket__name">
+                            {tk.item.seat || tk.item.seats?.length ? <span className="kds-seat" title={t('tables.seat.chair', { seat: tk.item.seats?.length ? tk.item.seats.join(' + ') : tk.item.seat })}>{tk.item.seats?.length ? tk.item.seats.join('+') : tk.item.seat}</span> : null}
                             {tk.item.name}
                             {tk.item.note && <em className="kds-ticket__note">{tk.item.note}</em>}
+                            <ChangeMark item={tk.item} />
                           </span>
                           <span className={`kds-ticket__state is-${status}`}>{t(`kitchen.${status}`)}</span>
                         </button>
+                        <CancelAsk ticket={tk} />
                       </li>
                     );
                   })}

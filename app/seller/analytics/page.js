@@ -876,6 +876,17 @@ export default function AnalyticsPage() {
                     formatValue={rupees}
                     emptyLabel={t('analytics.empty.sales')}
                   />
+                  {/* What cancellations after the kitchen started actually cost — a count
+                      of voids says nothing; "₹640 of food binned" is something to act on. */}
+                  {data.tables.wasted && (
+                    <p className="analytics-waste">
+                      {t('analytics.tableWasted', {
+                        value: rupees(data.tables.wasted.value),
+                        count: count(data.tables.wasted.count),
+                        names: data.tables.wasted.top.map((w) => w.name).join(', '),
+                      })}
+                    </p>
+                  )}
                 </ChartCard>
               )}
 

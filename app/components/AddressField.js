@@ -44,6 +44,19 @@ import {
  * already had a text input without touching its model, its API or its documents.
  */
 
+/** The post office in `list` the geocoder's neighbourhood names, or '' to make the person pick. */
+function matchLocality(list, area) {
+  const want = String(area || '').trim().toLowerCase();
+  if (!want) return '';
+  const exact = list.find((name) => name.toLowerCase() === want);
+  if (exact) return exact;
+  const loose = list.filter((name) => {
+    const have = name.toLowerCase();
+    return have.includes(want) || want.includes(have);
+  });
+  return loose.length === 1 ? loose[0] : '';
+}
+
 export default function AddressField({
   id,
   label,
@@ -55,6 +68,10 @@ export default function AddressField({
   place,
   omitPlace = false,
   required = false,
+  // The post office, when the pincode covers several. Asked of a required address by
+  // default — "411038" alone is six sorting offices, and a picker left on "Choose your area"
+  // is the one box on the form that nothing ever checked.
+  requireLocality = required,
   disabled = false,
   maxLength = 300,
   hint = '',
@@ -166,11 +183,19 @@ export default function AddressField({
       const data = await lookupPincode(code);
       if (cancelled) return;
       if (data.valid) {
+        const list = data.localities || [];
         setPinState('valid');
-        setLocalities(data.localities || []);
+        setLocalities(list);
         // The postal answer wins over whatever was in the boxes: it is the reason the
         // person typed the pincode.
-        patch({ city: data.city || '', state: data.state || '' });
+        const changes = { city: data.city || '', state: data.state || '' };
+        const held = String(partsRef.current.locality || '').trim();
+        // One post office is not a choice — write it down. Several, and the area picked for
+        // the PREVIOUS pincode is not one of them, so it goes rather than being saved next
+        // to a pincode it does not belong to.
+        if (list.length === 1 && !held) changes.locality = list[0];
+        if (list.length > 1 && held && !list.includes(held)) changes.locality = '';
+        patch(changes);
       } else if (data.unreachable) {
         // Not a wrong pincode — we could not ask. The city and state open up for typing
         // rather than the form stopping dead on somebody else's outage.
@@ -194,30 +219,50 @@ export default function AddressField({
     setLocating(true);
     setLocateNote('');
     setLocateOk(false);
-    const result = await locateAddress();
-    setLocating(false);
+    // A button left spinning forever is worse than an error: whatever goes wrong in here,
+    // the button comes back.
+    let result;
+    try {
+      result = await locateAddress();
+    } catch {
+      result = { ok: false, reason: 'unreachable' };
+    } finally {
+      setLocating(false);
+    }
     if (!result.ok) {
       setLocateNote(t(`address.${result.reason || 'unavailable'}`));
       return;
     }
     if (result.lat && result.lng) onCoords?.({ lat: result.lat, lng: result.lng });
-    setLocalities(result.localities || []);
+    const list = result.localities || [];
+    setLocalities(list);
     setPinState(result.pincode ? 'valid' : 'idle');
-    setLocateOk(true);
-    setLocateNote(t('address.located'));
     const current = partsRef.current;
     patch({
       // Only ever fills a blank. Somebody who already typed "Shop 4" and then tapped the
       // button to save themselves the rest of it should not lose the part they typed.
       flat: result.flat || current.flat,
       street: result.street || current.street,
-      // The geocoder's neighbourhood is only used as the locality when the postal list
-      // does not offer one to pick from — India Post's spelling is the one on the envelope.
-      locality: (result.localities || []).length > 1 ? '' : result.area || current.locality,
-      city: result.city || '',
-      state: result.state || '',
-      pincode: result.pincode || '',
+      // India Post's spelling is the one on the envelope, so when the pincode covers several
+      // post offices the geocoder's neighbourhood only pre-picks the one it names; if it
+      // names none, the picker stays empty and asks.
+      locality: list.length > 1 ? matchLocality(list, result.area) : result.area || current.locality,
+      // Without a pincode there is nothing to check a city against, and a city/state the
+      // screen cannot show is a city/state nobody can correct — so they wait for the PIN.
+      city: result.pincode ? result.city || '' : current.city,
+      state: result.pincode ? result.state || '' : current.state,
+      pincode: result.pincode || current.pincode,
     });
+    // The map often knows the road but not the PIN code (OpenStreetMap leaves it blank in a
+    // lot of India). Saying "filled" then would be a green tick over half an address.
+    if (result.pincode) {
+      setLocateOk(true);
+      setLocateNote(t('address.located'));
+    } else {
+      setLocateNote(t('address.locatedNoPin'));
+      markTouched('pincode');
+      if (typeof document !== 'undefined') document.getElementById(fieldId)?.focus();
+    }
   }
 
   /**
@@ -287,6 +332,17 @@ export default function AddressField({
     if (pinState === 'invalid') return { field: 'pincode', code: 'ADDRESS_PIN_UNKNOWN' };
     if (pinState === 'checking') return { field: 'pincode', code: 'ADDRESS_PIN_CHECKING' };
 
+    // Checked here and not in the shared rules: only this box knows which post offices sit
+    // under the pincode, and the server never sees the list.
+    if (
+      requireLocality &&
+      pinState === 'valid' &&
+      localities.length > 1 &&
+      !String(parts.locality || '').trim()
+    ) {
+      return { field: 'locality', code: 'ADDRESS_LOCALITY_REQUIRED' };
+    }
+
     /**
      * The boxes the pincode obliges — run on the PARTS, not on the composed line.
      *
@@ -299,7 +355,7 @@ export default function AddressField({
     if (cross) return cross;
 
     return addressProblem(composeAddress(parts, { omitPlace }), { required, maxLength });
-  }, [parts, omitPlace, required, maxLength, pinState]);
+  }, [parts, omitPlace, required, requireLocality, maxLength, pinState, localities]);
 
   /**
    * A half-typed pincode is not an error yet.
@@ -342,6 +398,8 @@ export default function AddressField({
   }
 
   const pinError = partError('pincode');
+  const localityError = partError('locality');
+  const star = required ? ' *' : '';
 
   return (
     <div className={`field address-field${error ? ' has-error' : ''}${className ? ` ${className}` : ''}`}>
@@ -378,7 +436,7 @@ export default function AddressField({
               so a screen that jumps to a refused field (Settings does) lands on the box the
               refusal is usually about, and the label above points here too. */}
           <div className={`field${pinError ? ' has-error' : ''}`}>
-            <label htmlFor={fieldId}>{t('address.pincode')}</label>
+            <label htmlFor={fieldId}>{t('address.pincode')}{star}</label>
             <div className="address-pin">
               <input
                 id={fieldId}
@@ -474,7 +532,7 @@ export default function AddressField({
               than held invisibly and re-saved, which is how a field nobody can see ends up
               on an invoice. */}
           {localities.length <= 1 && parts.locality && (
-            <div className="field">
+            <div className={`field${localityError ? ' has-error' : ''}`}>
               <label htmlFor={`${fieldId}-locality`}>{t('address.locality')}</label>
               <input
                 id={`${fieldId}-locality`}
@@ -484,22 +542,34 @@ export default function AddressField({
                 maxLength={budget('locality')}
                 disabled={disabled}
               />
+              {localityError && <span className="field-error-text">{localityError}</span>}
             </div>
           )}
 
           {localities.length > 1 && (
-            <div className="field">
-              <label htmlFor={`${fieldId}-locality`}>{t('address.locality')}</label>
+            <div className={`field${localityError ? ' has-error' : ''}`}>
+              <label htmlFor={`${fieldId}-locality`}>
+                {t('address.locality')}
+                {requireLocality ? ' *' : ''}
+              </label>
               <Dropdown
                 id={`${fieldId}-locality`}
                 value={parts.locality}
-                onChange={(v) => patch({ locality: v })}
+                onChange={(v) => {
+                  markTouched('locality');
+                  patch({ locality: v });
+                }}
                 disabled={disabled}
                 placeholder={t('address.localityPick')}
                 searchable={localities.length > 8}
                 searchPlaceholder={t('address.localityPick')}
                 options={localities.map((name) => ({ value: name, label: name }))}
               />
+              {localityError ? (
+                <span className="field-error-text">{localityError}</span>
+              ) : (
+                <span className="field-hint">{t('address.localityHint', { count: localities.length })}</span>
+              )}
             </div>
           )}
 

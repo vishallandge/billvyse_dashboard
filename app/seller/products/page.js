@@ -1131,7 +1131,10 @@ function SellerProductsPageInner() {
   async function recalcCost() {
     if (!editingId) return;
     try {
-      const data = await apiFetch(`/api/seller/products/${editingId}/recalc-cost`, { method: 'POST' });
+      const recipe = form.recipe
+        .filter((row) => row.product && Number(row.quantity) > 0)
+        .map((row) => ({ product: row.product, quantity: Number(row.quantity) }));
+      const data = await apiFetch(`/api/seller/products/${editingId}/recalc-cost`, { method: 'POST', body: JSON.stringify({ recipe }) });
       setForm((f) => ({ ...f, costPrice: String(data.product.costPrice) }));
       toast.success(t('seller.recipeCostUpdated', { cost: data.product.costPrice }));
     } catch (err) {

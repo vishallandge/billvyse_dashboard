@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { quoteDateForDays, MAX_QUOTE_VALID_DAYS, validateQuoteForm } from '../../../lib/quoteValidity';
 import { useRouter } from 'next/navigation';
@@ -9,12 +10,15 @@ import { isExpiredProduct } from '../../../lib/productExpiry';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
-import { printViaBluetooth, isBluetoothPrintingSupported } from '../../../lib/blePrinter';
+import { printSlip, qrSlotsReady } from '../../../lib/printer/slip';
+import { getRolePrinter, getSettings as getPrinterSettings } from '../../../lib/printer';
+import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { getShopSocket } from '../../../lib/socket';
 import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
 import UpiQr from '../../components/UpiQr';
 import RowMenu from '../../components/RowMenu';
 import ThermalReceipt from '../../components/ThermalReceipt';
+import KotTicket from '../../components/KotTicket';
 import ModifierPicker from '../../components/ModifierPicker';
 import { enqueueBill, getQueue, removeFromQueue, updateQueueEntry, queueCount, newClientBillId } from '../../../lib/offlineQueue';
 import { startBarcodeScanner } from '../../../lib/barcodeScanner';
@@ -369,6 +373,9 @@ export default function SellerBillingPage() {
   // What this trade sells decides how prominent a charge line is and what GST it
   // defaults to — a repair counter's charge is 18%, a kirana's delivery fee is usually 0.
   const biz = businessType(user?.businessType || DEFAULT_BUSINESS_TYPE);
+  // A cafe or dhaba that bills at the counter first still has a kitchen that needs the
+  // order on paper. Same trades that run tables — a kirana has no kitchen to send to.
+  const [kotSlip, setKotSlip] = useState(null);
   // Setting a pack size from the billing screen writes to the product, so it is offered
   // only to someone allowed to edit products. A staff cashier with billing-only rights
   // sees no such link rather than a button that 403s when they tap it.
@@ -3306,8 +3313,9 @@ export default function SellerBillingPage() {
           setReceiptText(r.text);
           setReceiptUpiLink(r.upiLink || null);
           setReceiptBillLink(r.billLink || null);
+          autoPrintReceipt(r.text);
         })
-        .catch(() => {});
+        .catch(() => autoPrintReceipt(''));
       clearCartAfterBill();
       setConfirmOpen(false);
       // A today-scoped reload recounts the day for us; while the panel is parked on a
@@ -3430,24 +3438,65 @@ export default function SellerBillingPage() {
     }
   }
 
+  /**
+   * Straight to the counter printer when one is set up (Settings → Printers), otherwise —
+   * or if that fails — the Print screen, where the body class makes the stylesheet show
+   * only the portalled thermal receipt.
+   */
   function handlePrint() {
-    // Flag the body so the print stylesheet shows only the portalled thermal receipt and
-    // hides the whole dashboard; clear it once the print dialog closes.
-    document.body.classList.add('printing-receipt');
-    const cleanup = () => {
-      document.body.classList.remove('printing-receipt');
-      window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-    window.print();
+    return printSlip({
+      role: 'receipt',
+      selector: '.thermal-receipt',
+      bodyClass: 'printing-receipt',
+      fallbackText: receiptText,
+      ready: qrSlotsReady,
+      onFallback: (message) => toast.info(message),
+      t,
+    });
   }
 
-  async function handleBluetoothPrint() {
-    try {
-      await printViaBluetooth(receiptText || 'Bill');
-    } catch (err) {
-      setError(t('seller.bluetoothPrintFailed', { reason: err.message }));
-    }
+  /**
+   * "Print the bill as soon as it is saved" — only ever to a direct printer. Opening the
+   * Print screen on its own after every bill would be a dialog in the cashier's face.
+   * Called once the receipt's links have landed, so the QR on the slip is the real one.
+   */
+  function autoPrintReceipt(text) {
+    if (!getPrinterSettings().autoPrint || !getRolePrinter('receipt')) return;
+    setTimeout(() => {
+      printSlip({
+        role: 'receipt',
+        selector: '.thermal-receipt',
+        bodyClass: 'printing-receipt',
+        fallbackText: text,
+        ready: qrSlotsReady,
+        directOnly: true,
+        onFallback: (message) => toast.error(message),
+        t,
+      });
+    }, 150);
+  }
+
+  // The kitchen's copy of a counter bill: names, quantities, no prices. The bill number
+  // doubles as the KOT/token number, so the counter and the kitchen call out one number.
+  function handlePrintKot() {
+    if (!receipt || receipt.offline) return;
+    flushSync(() => setKotSlip({
+      kot: {
+        number: receipt.billNumber,
+        sentAt: receipt.createdAt,
+        items: (receipt.items || []).map((item) => ({ name: item.name, quantity: item.quantity })),
+      },
+      order: { tableName: t('seller.kotCounter') },
+    }));
+    requestAnimationFrame(() => {
+      printSlip({
+        role: 'kot',
+        selector: '.kot-ticket',
+        bodyClass: 'printing-kot',
+        onFallback: (message) => toast.info(message),
+        t,
+      });
+    });
   }
 
   /**
@@ -4445,6 +4494,11 @@ export default function SellerBillingPage() {
                       <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={handlePrint}>
                         <PrinterIcon size={15} /> {t('seller.print')}
                       </button>
+                      {biz.runsTables && (
+                        <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={handlePrintKot}>
+                          <PrinterIcon size={15} /> {t('tables.kot')}
+                        </button>
+                      )}
                       <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={handleShare}>
                         <WhatsappIcon size={17} /> {t('seller.shareWhatsapp')}
                       </button>
@@ -5291,14 +5345,15 @@ export default function SellerBillingPage() {
                   <ReceiptIcon size={15} /> {t('seller.professionalBill')}
                 </Link>
                 <button className="btn btn-secondary btn-small" onClick={handlePrint}><PrinterIcon size={15} /> {t('seller.printReceiptAction')}</button>
+                {biz.runsTables && (
+                  <button className="btn btn-secondary btn-small" onClick={handlePrintKot}><PrinterIcon size={15} /> {t('tables.printKot')}</button>
+                )}
 
                 <button className="btn btn-secondary btn-small" onClick={handleShare}><WhatsappIcon size={17} /> {t('seller.shareWhatsapp')}</button>
                 <RowMenu tip={t('common.moreActions')} items={[
                   { label: t('seller.copyBillLink'), icon: <CopyIcon size={15} />, onClick: handleCopyBillLink },
-                  ...(isBluetoothPrintingSupported()
-                    ? [{ label: t('seller.printBluetooth'), icon: <PrinterIcon size={15} />, onClick: handleBluetoothPrint }]
-                    : []),
                 ]} />
+                <PrinterStatusChip role="receipt" />
               </div>
           )}
           </div>
@@ -5453,6 +5508,7 @@ export default function SellerBillingPage() {
               {capturedName && <p className="bill-capture-done"><CheckCircleIcon size={15} /> {t('seller.captureSaved', { name: capturedName })}</p>}
 
               <ThermalReceipt receipt={receipt} shop={user} upiLink={receiptUpiLink} billLink={receiptBillLink} t={t} />
+              {biz.runsTables && <KotTicket kot={kotSlip?.kot} order={kotSlip?.order} shop={user} t={t} />}
             </>
           )}
         </div>

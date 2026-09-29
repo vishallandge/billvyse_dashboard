@@ -22,6 +22,7 @@ const COLLECTION_LABELS = {
   purchaseOrders: 'Purchase orders',
   expenses: 'Kharcha entries',
   cashRegisters: 'Day book days',
+  cashMovements: 'Bank deposits & owner cash',
   stockAdjustments: 'Stock adjustments',
   orders: 'Online orders',
   stores: 'Stores',

@@ -17,6 +17,10 @@ import RowMenu from '../../../components/RowMenu';
 import { useConfirm } from '../../../components/ConfirmDialog';
 import { useToast } from '../../../components/Toast';
 import WhatsappSheet from '../../../components/WhatsappSheet';
+import PrinterStatusChip from '../../../components/PrinterStatusChip';
+import usePrinters from '../../../../lib/printer/usePrinters';
+import { errorKey, getRolePrinter, printElement } from '../../../../lib/printer';
+import { systemPrint } from '../../../../lib/printer/slip';
 import {
   INVOICE_TEMPLATES,
   INVOICE_THEMES,
@@ -499,6 +503,33 @@ export default function InvoicePage() {
   // Original/Duplicate/Triplicate idea only exists on sheet paper.
   const copies = isThermal ? 1 : Math.max(1, Math.min(3, Number(prefs.copies) || 1));
 
+  // A roll-paper invoice goes straight to the counter printer when one is set up
+  // (Settings → Printers). A4/A5 is a laser/inkjet job and always takes the Print screen —
+  // which, inside the Android app, is now Android's own print screen.
+  usePrinters();
+  const directPrinter = isThermal ? getRolePrinter('receipt') : null;
+  const [printingDirect, setPrintingDirect] = useState(false);
+
+  async function handlePrintInvoice() {
+    if (!directPrinter) {
+      systemPrint();
+      return;
+    }
+    setPrintingDirect(true);
+    try {
+      const sheet = document.querySelector('.invoice-copy');
+      await printElement(directPrinter.id, sheet?.firstElementChild || sheet, {
+        interactive: true,
+        ready: (node) => Array.from(node.querySelectorAll('.inv-qr')).every((slot) => slot.querySelector('img')),
+      });
+    } catch (err) {
+      toast.info(t('printer.directFailed', { name: directPrinter.name, reason: t(errorKey(err)) }));
+      systemPrint();
+    } finally {
+      setPrintingDirect(false);
+    }
+  }
+
   const isCreditNote = prefs.docKind.startsWith('creditnote:');
   // What actually gets laid out. A credit note that hasn't arrived yet falls back to the
   // bill, so the paper never blanks out mid-selection.
@@ -627,8 +658,9 @@ export default function InvoicePage() {
               ]}
             />
           )}
-          <button type="button" className="btn btn-primary btn-small" onClick={() => window.print()} disabled={!invoice}>
-            <PrinterIcon size={15} /> {t('seller.invoicePrintOrPdf')}
+          {isThermal && <PrinterStatusChip role="receipt" />}
+          <button type="button" className="btn btn-primary btn-small" onClick={handlePrintInvoice} disabled={!invoice || printingDirect}>
+            <PrinterIcon size={15} /> {directPrinter ? t('printer.printOn', { name: directPrinter.name }) : t('seller.invoicePrintOrPdf')}
           </button>
         </div>
       </div>

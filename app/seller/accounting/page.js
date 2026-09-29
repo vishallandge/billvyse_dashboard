@@ -722,7 +722,7 @@ export default function AccountingPage() {
               >
                 {t('seller.acctAllVouchers')}
               </button>
-              {['sale', 'purchase', 'purchaseReturn', 'expense', 'otherIncome', 'receipt', 'payment'].map((kind) => (
+              {['sale', 'saleReturn', 'purchase', 'purchaseReturn', 'expense', 'otherIncome', 'receipt', 'payment', 'ownerCash'].map((kind) => (
                 <button
                   key={kind}
                   type="button"

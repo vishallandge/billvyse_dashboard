@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
 import { useLanguage } from './LanguageProvider';
 import { useConfirm } from './ConfirmDialog';
-import { ChevronDownIcon, CheckIcon, SettingsIcon, CreditCardIcon, SearchIcon, LogOutIcon, HeadsetIcon } from './Icons';
+import { ChevronDownIcon, CheckIcon, SettingsIcon, CreditCardIcon, SearchIcon, LogOutIcon, HeadsetIcon, LockIcon } from './Icons';
 
 /**
  * Who you are, which shop, and — the part that actually matters — WHICH STORE you
@@ -262,6 +262,18 @@ export default function AccountMenu({ user, stores, activeStore, onStoreChange, 
               <Link href="/seller/plan" role="menuitem" className="account-menu-item" onClick={() => setOpen(false)}>
                 <CreditCardIcon size={17} />
                 <span>{t('nav.plan')}</span>
+              </Link>
+            </div>
+          )}
+
+          {/* Staff have no Settings, so their own password and signed-in devices get a door of
+              their own. Without it the password the owner read out at the counter was the
+              password forever. */}
+          {isStaff && (
+            <div className="account-menu-section">
+              <Link href="/seller/my-account" role="menuitem" className="account-menu-item" onClick={() => setOpen(false)}>
+                <LockIcon size={17} />
+                <span>{t('seller.mySecurity')}</span>
               </Link>
             </div>
           )}

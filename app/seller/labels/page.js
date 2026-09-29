@@ -6,6 +6,7 @@ import { apiFetch, fetchBlobUrl } from '../../../lib/api';
 import { formatRupees } from '../../../lib/format';
 import { resolveLayout } from '../../../lib/labelSpec';
 import { useLanguage } from '../../components/LanguageProvider';
+import { useDashboardUser } from '../../components/DashboardShell';
 import Illustration from '../../components/Illustration';
 import { useToast } from '../../components/Toast';
 import { SkeletonTable } from '../../components/Skeleton';
@@ -13,6 +14,9 @@ import { Pagination, usePagination } from '../../components/Pagination';
 import { BarcodeIcon, SearchIcon, XIcon, PlusIcon } from '../../components/Icons';
 import Dropdown from '../../components/Dropdown';
 import LabelPreview, { LabelSheetMap } from '../../components/LabelPreview';
+import PrinterStatusChip from '../../components/PrinterStatusChip';
+import usePrinters from '../../../lib/printer/usePrinters';
+import { errorKey, getRolePrinter } from '../../../lib/printer';
 
 // The switches, in the order the panel shows them, paired with the string that names each
 // one. The server decides which are ON for a template (it sends `fields` with every
@@ -53,6 +57,8 @@ const CUSTOM_FIELDS = [
 ];
 
 export default function LabelsPage() {
+  const user = useDashboardUser();
+  const isOwner = user?.role !== 'staff';
   const { t, lang } = useLanguage();
   const toast = useToast();
 
@@ -308,6 +314,40 @@ export default function LabelsPage() {
 
   const previewShop = useMemo(() => ({ shopName: shop.name }), [shop.name]);
 
+  // A label printer set up in Settings → Printers prints the stickers directly, at the
+  // printer's own sticker size, instead of going through a PDF sheet.
+  usePrinters();
+  const labelPrinter = getRolePrinter('label');
+  const [sending, setSending] = useState(false);
+
+  function qrValueFor(product) {
+    if (!fields.qr || !qrAvailable || !product) return null;
+    if (qrContent === 'code') return String(product.barcode || '').trim() || null;
+    return shop.catalogUrl ? `${shop.catalogUrl}?p=${product._id}` : null;
+  }
+
+  async function printToLabelPrinter() {
+    if (!labelPrinter) return;
+    if (selected.size === 0) {
+      toast.error(t('labels.pickSome'));
+      return;
+    }
+    setSending(true);
+    try {
+      const { printLabelsDirect } = await import('../../../lib/printer/labels');
+      const items = [...selected]
+        .map((id) => products.find((product) => product._id === id))
+        .filter(Boolean)
+        .map((product) => ({ product, copies: copiesFor(product._id), qrValue: qrValueFor(product) }));
+      await printLabelsDirect(labelPrinter.id, items, { shop: previewShop, template, fields, fontScale: Number(fontScale) });
+      toast.success(t('printer.labelsSent', { count: totalStickers, name: labelPrinter.name }));
+    } catch (err) {
+      toast.error(t('printer.directFailedOnly', { name: labelPrinter.name, reason: t(errorKey(err)) }));
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <>
       <div className="content-header page-head">
@@ -315,10 +355,21 @@ export default function LabelsPage() {
           <h1>{t('labels.title')}</h1>
           <p>{t('labels.subtitle')}</p>
         </div>
-        <button type="button" className="btn btn-primary btn-inline" onClick={print} disabled={selected.size === 0 || printing}>
-          <BarcodeIcon size={17} />
-          {printing ? t('labels.printing') : t('labels.print')}
-        </button>
+        <div className="page-head-actions">
+          {labelPrinter && (
+            <>
+              <PrinterStatusChip role="label" />
+              <button type="button" className="btn btn-primary btn-inline" onClick={printToLabelPrinter} disabled={selected.size === 0 || sending}>
+                <BarcodeIcon size={17} />
+                {sending ? t('labels.printing') : t('printer.printOn', { name: labelPrinter.name })}
+              </button>
+            </>
+          )}
+          <button type="button" className={`btn ${labelPrinter ? 'btn-secondary' : 'btn-primary'} btn-inline`} onClick={print} disabled={selected.size === 0 || printing}>
+            <BarcodeIcon size={17} />
+            {printing ? t('labels.printing') : labelPrinter ? t('printer.printPdfSheet') : t('labels.print')}
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -477,15 +528,21 @@ export default function LabelsPage() {
           {fields.barcode && missingBarcodes > 0 && (
             <div className="info-banner" style={{ marginTop: '0.9rem', marginBottom: 0 }}>
               {t('labels.missingBarcodes', { count: missingBarcodes })}
-              <button
-                type="button"
-                className="link-btn"
-                style={{ marginInlineStart: '0.5rem' }}
-                onClick={generateBarcodes}
-                disabled={generating}
-              >
-                {t('labels.generateBarcodes')}
-              </button>
+              {/* Minting a barcode writes to the product — an owner-only edit — so a staff
+                  login is told who can do it instead of shown a button that would 403. */}
+              {isOwner ? (
+                <button
+                  type="button"
+                  className="link-btn"
+                  style={{ marginInlineStart: '0.5rem' }}
+                  onClick={generateBarcodes}
+                  disabled={generating}
+                >
+                  {t('labels.generateBarcodes')}
+                </button>
+              ) : (
+                <span style={{ marginInlineStart: '0.5rem' }}>{t('labels.generateOwnerOnly')}</span>
+              )}
             </div>
           )}
           {qrNeedsBarcode && (

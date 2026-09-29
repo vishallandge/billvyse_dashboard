@@ -78,6 +78,10 @@ export default function ForgotPasswordPage() {
         </form>
       )}
 
+      {/* A staff login's email is whatever the owner typed when creating it, and it may not
+          be an inbox the cashier can open. The way back that always works is the owner. */}
+      {!sent && <p className="field-hint">{t('seller.forgotStaffHint')}</p>}
+
       <p className="auth-foot">
         <Link href="/login">{t('seller.backToLogin')}</Link>
       </p>

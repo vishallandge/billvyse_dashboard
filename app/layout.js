@@ -2,6 +2,7 @@ import { Inter, Noto_Sans_Devanagari, Sora } from 'next/font/google';
 import './globals.css';
 import StartupStyles from './components/StartupStyles';
 import PwaRegister from './components/PwaRegister';
+import PrinterBoot from './components/PrinterBoot';
 import AutofillGuard from './components/AutofillGuard';
 
 /**
@@ -217,6 +218,7 @@ export default function RootLayout({ children }) {
           }}
         />
         <PwaRegister />
+        <PrinterBoot />
         {/* Keeps the browser's own saved-value dropdown from opening over our forms.
             Mounted at the top of <body> rather than inside a page, because every dialog
             in the app portals to <body> and it has to see those too. */}
