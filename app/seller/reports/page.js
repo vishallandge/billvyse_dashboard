@@ -39,6 +39,7 @@ const CHART_CONFIG = {
   'peak-hours': { type: 'bar', x: 'hourLabel', y: 'billCount', money: false, sortBy: 'hourLabel', shortX: 5 },
   'profit-by-category': { type: 'bar', x: 'category', y: 'revenue', money: true, top: 10 },
   'counter-wise-sales': { type: 'bar', x: 'counter', y: 'sales', money: true, top: 10 },
+  'charges-collected': { type: 'bar', x: 'charge', y: 'amount', money: true, top: 10 },
   'staff-performance': { type: 'bar', x: 'staffName', y: 'sales', money: true, top: 10 },
   'slow-moving-stock': { type: 'bar', x: 'name', y: 'stockValue', money: true, top: 10 },
 };
@@ -71,6 +72,10 @@ const REPORT_TYPES = [
   // owner's own choice in Settings → Screens) and comes back the moment that changes.
   { key: 'counter-wise-sales', group: 'sales', labelKey: 'seller.reportCounterWise', preset: 'today', needsNav: 'counters' },
   { key: 'customer-purchase-pattern', group: 'sales', labelKey: 'seller.reportPurchasePattern', preset: 'last30' },
+  // Packing, delivery, section charges, labour — everything billed on top of the goods. Not
+  // tied to a trade: a hardware shop's tempo bhaada is the same kind of line as a dhaba's
+  // parcel charge, and the server only ever lists charges a shop actually billed.
+  { key: 'charges-collected', group: 'sales', labelKey: 'seller.reportChargesCollected', preset: 'month' },
 
   // ---- Profit ----
   { key: 'monthly-profit', group: 'profit', labelKey: 'seller.reportMonthlyProfit', preset: 'month' },
@@ -163,7 +168,7 @@ const REPORT_PRESETS = ['today', 'yesterday', 'last7', 'last30', 'month', 'lastM
 const BRANCH_MANAGER_REPORTS = [
   'daily-sales', 'monthly-profit', 'stock-valuation', 'sales-trend', 'profit-by-category',
   'slow-moving-stock', 'peak-hours', 'counter-wise-sales', 'staff-performance',
-  'stock-adjustments', 'cash-bank-book',
+  'stock-adjustments', 'cash-bank-book', 'charges-collected',
 ];
 
 const EMPTY = [];
@@ -399,7 +404,9 @@ export default function ReportsPage() {
   return (
     <>
       <div className="content-header">
-        <h1>{t('seller.reportsTitle')}</h1>
+        {/* The report on screen goes into the breadcrumb — "Reports › Daily sales" — since
+            the picker that names it scrolls away with the page (PageTrail.js). */}
+        <h1 data-trail-section={t(report.labelKey)}>{t('seller.reportsTitle')}</h1>
         <p>{t('seller.reportsSubtitle')}</p>
       </div>
 

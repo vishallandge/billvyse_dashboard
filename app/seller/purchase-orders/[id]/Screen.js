@@ -508,8 +508,8 @@ export default function PurchaseOrderDetailPage() {
             {' · '}
             {formatDate(order.createdAt, lang)}
           </p>
-          {/* The sideways link only. The way UP from this screen is the shell's, on
-              the line above the heading — see app/components/PageUp.js. */}
+          {/* The sideways link only. The way UP from this screen is the shell's, in
+              the breadcrumb on the sticky bar — see app/components/PageTrail.js. */}
           {order.supplier?.id && (
             <div className="head-links">
               <Link href="/seller/suppliers/ledger" className="nav-link">{t('seller.supplierLedgerTitle')} →</Link>

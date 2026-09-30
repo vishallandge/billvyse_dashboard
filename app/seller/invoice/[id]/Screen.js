@@ -640,7 +640,12 @@ export default function InvoicePage() {
       )}
 
       <div className="invoice-actionbar invoice-noprint">
-        <span className="invoice-actionbar-doc">
+        {/* `data-trail` names this document in the breadcrumb (PageTrail.js): the heading
+            above says what KIND of page this is, and the trail wants which one. */}
+        <span
+          className="invoice-actionbar-doc"
+          data-trail={[activeDoc?.number, activeDoc?.buyer?.name].filter(Boolean).join(' · ') || undefined}
+        >
           {activeDoc ? activeDoc.number : ''}
           {activeDoc && <em>{activeDoc.buyer?.name}</em>}
         </span>

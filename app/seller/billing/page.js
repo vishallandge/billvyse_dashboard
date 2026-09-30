@@ -414,6 +414,22 @@ export default function SellerBillingPage() {
   // was unreachable from the screen the shopkeeper is already standing on. It is now the
   // shop's whole register: any period, any counter, any mode, searchable by customer.
   const [billQuery, setBillQuery] = useState(DEFAULT_BILL_QUERY);
+
+  /**
+   * Arriving at `/seller/billing#bills` (the Tables floor's "Recent bills" shortcut) means
+   * "show me the register", not "show me an empty counter". Scrolled once the first page of
+   * bills has landed rather than on mount: until then the table is a skeleton, and the
+   * product shelf above it is still settling, so an early scroll lands short.
+   */
+  const billsHashDone = useRef(false);
+  useEffect(() => {
+    if (billsHashDone.current || billsLoading) return;
+    billsHashDone.current = true;
+    if (window.location.hash !== '#bills') return;
+    requestAnimationFrame(() => {
+      document.getElementById('bills')?.scrollIntoView({ block: 'start' });
+    });
+  }, [billsLoading]);
   // The find box is uncontrolled by the query on purpose — typing three letters of a name
   // must not fire a request per keystroke against a collection this size. Applied on Enter.
   const [billSearchDraft, setBillSearchDraft] = useState('');
@@ -5528,7 +5544,9 @@ export default function SellerBillingPage() {
         />
       )}
 
-      <div className="panel">
+      {/* `#bills` is the address of this register — the Tables floor's "Recent bills"
+          shortcut lands here (see the effect that scrolls to it). */}
+      <div className="panel bill-register" id="bills">
         <div className="section-title has-actions">
           <div className="section-title__label">
             <div className="icon-badge icon-muted"><ClockIcon size={16} /></div>

@@ -14,10 +14,12 @@ import {
   formatShareQuantity,
   sectionCharge,
   sectionChargeLine,
+  takeawayCharge,
+  flatChargeLine,
   tableBillKey,
 } from '../../../lib/tableSplit';
 import { getShopSocket } from '../../../lib/socket';
-import { useDashboardUser } from '../../components/DashboardShell';
+import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
 import { businessType, DEFAULT_BUSINESS_TYPE } from '../../../lib/businessTypes';
 import { useLanguage } from '../../components/LanguageProvider';
 import Illustration from '../../components/Illustration';
@@ -198,6 +200,12 @@ export default function TablesPage() {
   // The section charge on this table's bill. On by default; a customer who objects gets it
   // taken off with one switch — it is never a charge the counter can't remove.
   const [chargeOn, setChargeOn] = useState(true);
+  // The parcel/delivery charge on this order (models/FloorSettings.js): on by default, off
+  // with one switch for a regular, and the amount can be typed for this one order — a
+  // delivery two streets away and one across town are not the same trip.
+  const [takeawaySettings, setTakeawaySettings] = useState(null);
+  const [takeawayOn, setTakeawayOn] = useState(true);
+  const [takeawayDraft, setTakeawayDraft] = useState('');
   const [quickName, setQuickName] = useState('');
   const [quickGuests, setQuickGuests] = useState('');
   const [takeawayForm, setTakeawayForm] = useState({ orderType: 'parcel', label: '', guestCount: '', customerName: '', customerPhone: '' });
@@ -269,6 +277,12 @@ export default function TablesPage() {
   // inventory). A waiter still sees Manage Tables, read-only.
   const canEditFloor = !user || user.role !== 'staff'
     || (Array.isArray(user.permissions) && user.permissions.includes('billing') && user.permissions.includes('inventory'));
+  // Settled table bills live in the bill register on the billing screen. The shortcut is
+  // shown only to someone that screen will open for — a waiter without billing would be
+  // handed a 403, and a switched-off module is not a door either.
+  const hiddenNav = useHiddenNav();
+  const canSeeBills = !hiddenNav.includes('billing')
+    && (!user || user.role !== 'staff' || (Array.isArray(user.permissions) && user.permissions.includes('billing')));
 
   const [transferPicking, setTransferPicking] = useState(false);
   const [transferTarget, setTransferTarget] = useState('');
@@ -321,6 +335,7 @@ export default function TablesPage() {
       .then((data) => {
         setFloorTables(data.tables || []);
         setZoneSettings(data.zones || []);
+        setTakeawaySettings(data.takeaway || null);
       })
       .catch((err) => setError(tableErrorText(err, t)));
   }
@@ -382,6 +397,8 @@ export default function TablesPage() {
     // A different table is a different customer: its own charge decision, no half-built
     // split or join picker carried over from the last one.
     setChargeOn(true);
+    setTakeawayOn(true);
+    setTakeawayDraft('');
     setJoinPicking(false);
     setJoinPick([]);
     setGuestSplitOpen(false);
@@ -436,6 +453,20 @@ export default function TablesPage() {
   const chargePercent = activeZone ? zoneConfig.get(activeZone)?.chargePercent || 0 : 0;
   const chargeLabel = activeZone ? chargeLabelFor(activeZone) : '';
   const chargeActive = chargePercent > 0 && chargeOn;
+
+  // Parcel and delivery orders sit in no section, so this is their charge instead.
+  const takeawayBase = active && active.orderType !== 'dine_in'
+    ? takeawayCharge(active.orderType, takeawaySettings, (active.items || []).map((item) => ({ item, quantity: item.quantity })))
+    : null;
+  const takeawayLabel = !takeawayBase
+    ? ''
+    : takeawayBase.kind === 'parcel'
+      ? takeawaySettings?.parcelLabel || t('tables.parcelChargeDefault')
+      : takeawaySettings?.deliveryLabel || t('tables.deliveryChargeDefault');
+  const takeawayTyped = takeawayDraft.trim() === '' ? NaN : Number(takeawayDraft);
+  const takeawayAmount = takeawayBase && takeawayOn && !takeawayBase.free
+    ? round2(Number.isFinite(takeawayTyped) && takeawayTyped >= 0 ? takeawayTyped : takeawayBase.amount)
+    : 0;
 
   // Free tables the running party could spread onto — the same zone first, because the
   // table you push over is the one next to you.
@@ -1191,13 +1222,20 @@ export default function TablesPage() {
   }
 
   // The POST /api/seller/bills items for a set of lines, plus the section charge line when
-  // this table's section has one switched on.
-  function billItemsFor(lines) {
+  // this table's section has one switched on, plus the parcel/delivery charge on the one
+  // bill that carries it (`withTakeaway`) — a flat charge is paid once per order, not once
+  // per guest's share of it.
+  function billItemsFor(lines, { withTakeaway = true } = {}) {
     const items = lines.map(({ item, quantity }) => ({ productId: item.product, quantity, modifiers: item.modifiers }));
     const charge = chargeActive ? sectionChargeLine(chargeLabel, chargePercent, lines) : null;
     if (charge) items.push(charge);
+    const flat = withTakeaway && takeawayAmount > 0 ? flatChargeLine(takeawayLabel, takeawayAmount, takeawayBase?.gstRate) : null;
+    if (flat) items.push(flat);
     return items;
   }
+
+  // Part of the idempotency key, so a retry after a charge was changed is a new bill.
+  const chargeKey = `${chargeActive ? `c${chargePercent}` : ''}${takeawayAmount > 0 ? `t${takeawayAmount}` : ''}`;
 
   function groupLabel(index) {
     return (groupNames[index] || '').trim() || `${t('tables.bill')} ${index + 1}`;
@@ -1219,7 +1257,7 @@ export default function TablesPage() {
       const billData = await apiFetch('/api/seller/bills', {
         method: 'POST',
         body: JSON.stringify({
-          clientBillId: tableBillKey(active._id, 'full', lines, chargeActive ? `c${chargePercent}` : ''),
+          clientBillId: tableBillKey(active._id, 'full', lines, chargeKey),
           items: billItemsFor(lines),
           paymentMode: settleMode,
           // Bills a parcel/delivery on its own price list — see backend/utils/orderPricing.js.
@@ -1360,23 +1398,27 @@ export default function TablesPage() {
   const guestSplit = useMemo(() => {
     if (!active || !guestSplitOpen) return { groups: [], unbalanced: [] };
     const { groups, unbalanced } = buildGroups(active.items, allocation, splitGuestCount);
+    // The parcel/delivery charge rides on the first bill that has food on it.
+    const takeawayIndex = groups.find((g) => g.lines.length > 0)?.index;
     return {
       unbalanced,
       groups: groups.map((g) => {
         const charge = chargeActive ? sectionCharge(g.lines, chargePercent).amount : 0;
+        const takeaway = g.index === takeawayIndex ? takeawayAmount : 0;
         // Each group's own bill, rounded the way that bill will be saved.
         const money = billMoney({
           lines: [
             ...g.lines.map(({ item, quantity }) => ({ price: item.price, quantity })),
             ...(charge > 0 ? [{ price: charge, quantity: 1 }] : []),
+            ...(takeaway > 0 ? [{ price: takeaway, quantity: 1 }] : []),
           ],
           discountPercent: Number(billDiscountPercent) || 0,
           roundOff: user?.billingSettings?.roundOff !== false,
         });
-        return { ...g, charge, payable: money.payable };
+        return { ...g, charge, takeaway, payable: money.payable };
       }),
     };
-  }, [active, guestSplitOpen, allocation, splitGuestCount, chargeActive, chargePercent, billDiscountPercent]);
+  }, [active, guestSplitOpen, allocation, splitGuestCount, chargeActive, chargePercent, takeawayAmount, billDiscountPercent]);
   const guestGroups = guestSplit.groups;
 
   // Every piece of every dish must be on some bill before anything is charged.
@@ -1392,13 +1434,13 @@ export default function TablesPage() {
     return (guestModes[g.index] || 'cash') === 'khata' && !guestCustomers[g.index];
   }
 
-  function createGroupBill(g, kind) {
+  function createGroupBill(g, kind, { withTakeaway = g.takeaway > 0 } = {}) {
     const mode = guestModes[g.index] || 'cash';
     return apiFetch('/api/seller/bills', {
       method: 'POST',
       body: JSON.stringify({
-        clientBillId: tableBillKey(active._id, kind, g.lines, `${g.index}${chargeActive ? `c${chargePercent}` : ''}`),
-        items: billItemsFor(g.lines),
+        clientBillId: tableBillKey(active._id, kind, g.lines, `${g.index}${chargeKey}${withTakeaway ? '' : 'n'}`),
+        items: billItemsFor(g.lines, { withTakeaway }),
         paymentMode: mode,
         orderType: active.orderType,
         counter: `${active.tableLabel || active.tableName} · ${groupLabel(g.index)}`,
@@ -1477,7 +1519,14 @@ export default function TablesPage() {
     const label = groupLabel(g.index);
     setBusy('settle');
     try {
-      const billData = await createGroupBill(g, 'part');
+      // One guest leaving early does not pay the whole order's parcel/delivery charge; it
+      // stays on the table for its final bill — unless this group IS the rest of the
+      // order, in which case this is that final bill.
+      const takesAll = active.items.every((it) => {
+        const onBill = g.lines.filter((l) => l.item._id === it._id).reduce((sum, l) => sum + l.quantity, 0);
+        return onBill >= it.quantity - 1e-9;
+      });
+      const billData = await createGroupBill(g, 'part', { withTakeaway: takesAll });
       const data = await apiFetch(`/api/seller/table-orders/${active._id}/settle-part`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1567,7 +1616,7 @@ export default function TablesPage() {
   // applies to the whole bill) is worked on dishes + charge here too — the number on this
   // screen has to be the number on the printed bill.
   const chargeAmount = active && chargeActive ? sectionCharge(wholeTableLines(), chargePercent).amount : 0;
-  const total = round2(itemsTotal + chargeAmount);
+  const total = round2(itemsTotal + chargeAmount + takeawayAmount);
   const pendingCount = active ? active.items.filter((i) => !i.sentToKitchen).length : 0;
   // Worked out exactly as the saved bill will be — line by line, the discount, and the round
   // to the rupee this shop bills in — so the number the waiter reads out is the number printed.
@@ -1576,6 +1625,7 @@ export default function TablesPage() {
     lines: [
       ...(active?.items || []).map((item) => ({ price: item.price, quantity: item.quantity })),
       ...(chargeAmount > 0 ? [{ price: chargeAmount, quantity: 1 }] : []),
+      ...(takeawayAmount > 0 ? [{ price: takeawayAmount, quantity: 1 }] : []),
     ],
     discountPercent: Number(billDiscountPercent) || 0,
     discountAmount: Number(billDiscountAmount) || 0,
@@ -2211,6 +2261,61 @@ export default function TablesPage() {
                     </div>
                   )}
 
+                  {/* The parcel/delivery charge — its own line on the bill, off with one switch
+                      for a regular, and the amount typed for this order when the trip is
+                      longer or shorter than usual. Free delivery says so instead of vanishing. */}
+                  {takeawayBase && active.items.length > 0 && (
+                    <div className="section-charge-row">
+                      {!takeawayBase.free && (
+                        <Switch id="takeaway-charge" checked={takeawayOn} onChange={setTakeawayOn} label={takeawayLabel} />
+                      )}
+                      <label htmlFor={takeawayBase.free ? undefined : 'takeaway-charge'}>
+                        <strong>{takeawayLabel}</strong>
+                        <small>
+                          {takeawayBase.free
+                            ? t('tables.freeDeliveryApplied', { amount: formatRupees(takeawaySettings.freeDeliveryAbove, lang) })
+                            : t('tables.takeawayChargeHint')}
+                        </small>
+                      </label>
+                      {takeawayBase.free ? (
+                        <span className="section-charge-row__amount is-free">{t('tables.free')}</span>
+                      ) : takeawayOn ? (
+                        <span className="takeaway-charge-input">
+                          <span aria-hidden="true">₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="decimal"
+                            value={takeawayDraft}
+                            placeholder={String(takeawayBase.amount)}
+                            onChange={(e) => setTakeawayDraft(e.target.value)}
+                            aria-label={takeawayLabel}
+                          />
+                        </span>
+                      ) : (
+                        <span className="section-charge-row__amount">—</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* A parcel with no packing charge set anywhere: say where it is set, once,
+                      quietly — to the people who can set it. */}
+                  {!takeawayBase && active.orderType !== 'dine_in' && active.items.length > 0 && canEditFloor && (
+                    <div className="section-charge-row is-unset">
+                      <span className="takeaway-unset">
+                        {t(active.orderType === 'delivery' ? 'tables.deliveryChargeUnset' : 'tables.parcelChargeUnset')}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-small btn-inline"
+                        onClick={() => { setManageStart('takeaway'); setManageOpen(true); }}
+                      >
+                        {t('tables.takeawayChargeSetUp')}
+                      </button>
+                    </div>
+                  )}
+
                   {guestSplitOpen && (
                     <div className="guest-split-panel">
                       <div className="guest-split-top">
@@ -2337,6 +2442,12 @@ export default function TablesPage() {
                                       <li className="is-charge">
                                         <span>{chargeLabel} ({chargePercent}%)</span>
                                         <span>{formatRupees(g.charge, lang)}</span>
+                                      </li>
+                                    )}
+                                    {g.takeaway > 0 && (
+                                      <li className="is-charge">
+                                        <span>{takeawayLabel}</span>
+                                        <span>{formatRupees(g.takeaway, lang)}</span>
                                       </li>
                                     )}
                                   </ul>
@@ -2532,6 +2643,13 @@ export default function TablesPage() {
                 <KitchenIcon size={17} /> {t('nav.kitchen')}
                 {floorStats.onFire > 0 && <span className="link-count">{floorStats.onFire}</span>}
               </Link>
+              {/* Every settled bill — table, takeaway or counter — is in the one register;
+                  this lands on it rather than on the empty counter above it. */}
+              {canSeeBills && (
+                <Link href="/seller/billing#bills" className="btn btn-secondary btn-inline">
+                  <ReceiptIcon size={17} /> {t('seller.recentBills')}
+                </Link>
+              )}
               <button type="button" className="btn btn-secondary btn-inline" onClick={() => setTakeawayOpen(true)}>
                 <PlusIcon size={17} /> {t('tables.newTakeaway')}
               </button>
@@ -2752,6 +2870,20 @@ export default function TablesPage() {
                   onChange={(v) => setTakeawayForm((f) => ({ ...f, orderType: v }))}
                   options={TAKEAWAY_TYPES.map((key) => ({ value: key, label: t(`tables.type.${key}`) }))}
                 />
+                {/* Said before the order is opened, so the charge on the bill is never news. */}
+                {(() => {
+                  const isParcel = takeawayForm.orderType === 'parcel';
+                  const amount = isParcel ? takeawaySettings?.parcelCharge : takeawaySettings?.deliveryCharge;
+                  if (!(amount > 0)) return null;
+                  const label = isParcel
+                    ? takeawaySettings.parcelLabel || t('tables.parcelChargeDefault')
+                    : takeawaySettings.deliveryLabel || t('tables.deliveryChargeDefault');
+                  return (
+                    <p className="field-hint" style={{ margin: '0.3rem 0 0' }}>
+                      {t('tables.takeawayChargeWillAdd', { label, amount: formatRupees(amount, lang) })}
+                    </p>
+                  );
+                })()}
               </div>
               <div className="field">
                 <label htmlFor="takeawayLabel">{t('tables.orderLabel')}</label>
@@ -2842,6 +2974,7 @@ export default function TablesPage() {
           floorTables={floorTables}
           setFloorTables={setFloorTables}
           zoneSettings={zoneSettings}
+          takeawaySettings={takeawaySettings}
           busyTableIds={new Set(orderByTableId.keys())}
           canEdit={canEditFloor}
           startWith={manageStart}

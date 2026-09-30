@@ -21,7 +21,7 @@ import {
 import Calculator from './Calculator';
 import Dropdown from './Dropdown';
 import FullscreenToggle from './FullscreenToggle';
-import PageUp from './PageUp';
+import PageTrail, { usePageHeading } from './PageTrail';
 import { ModuleNavigationContext } from './ModuleNavigationContext';
 import NotificationPopover from './NotificationPopover';
 import SupportPopover from './SupportPopover';
@@ -530,6 +530,32 @@ export default function DashboardShell({ role, navItems, children }) {
     () => navItems.filter((item) => canSeeNavItem(item, user, navHiddenAndLocked)),
     [navItems, user, navHiddenAndLocked]
   );
+
+  // The breadcrumb's last word is the page's own <h1> (PageTrail.js), read off the page
+  // wrapper. State rather than a ref so the hook hears about each new wrapper.
+  const [pageNode, setPageNode] = useState(null);
+  const pageHeading = usePageHeading(pageNode);
+
+  // The desk tool row is sticky; once the page has moved under it, it needs a floor of its
+  // own or the rows scroll straight through the breadcrumb. At rest it has none — chrome
+  // does not wear a card.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      setScrolled(window.scrollY > 4);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    read();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
 
   // Opens the same sheet a refused API call would have opened, from a click instead of a
   // 402 — one component, one look, whichever way the shop arrives at the wall.
@@ -1194,6 +1220,12 @@ export default function DashboardShell({ role, navItems, children }) {
   }
 
   const currentNavItem = navItems.find((item) => item.href === pathname);
+  const trailProps = {
+    navItems: reachableNav,
+    home: user.role === 'superadmin' ? '/admin' : '/seller',
+    labelFor: (item) => navLabel(item, user, t),
+    heading: pageHeading,
+  };
 
   return (
     <DashboardUserContext.Provider value={user}>
@@ -1227,7 +1259,12 @@ export default function DashboardShell({ role, navItems, children }) {
           >
             <MenuIcon size={20} />
           </button>
-          <span className="mobile-title">{currentNavItem ? navLabel(currentNavItem, user, t) : t('appName')}</span>
+          {/* Where am I, on a phone: the page's own name, with the way out as a small named
+              link above it. This bar is the one thing that stays put while the page
+              scrolls, so it is the only place that answer survives a long ledger. */}
+          <Suspense fallback={<span className="mobile-title">{currentNavItem ? navLabel(currentNavItem, user, t) : t('appName')}</span>}>
+            <PageTrail variant="app" {...trailProps} />
+          </Suspense>
           {/* Identity belongs in the APP BAR on a phone, not in the tool row below it.
               That row wraps by design once it runs out of width, and the chip — being
               last in it — was the thing that dropped onto a line of its own: one
@@ -1421,12 +1458,20 @@ export default function DashboardShell({ role, navItems, children }) {
               moved up here — nowhere to sign out from. The admin simply gets the
               subset that means anything there: the palette, the bell and the
               calculator are all shop tools, so they stay behind the role check. */}
-          {/* The way out of the current screen no longer lives here. It used to be a
-              history back arrow shown only in fullscreen and the installed app, which
-              meant the app had no way out at all in a normal browser tab — and where it
-              did appear it could not say where it went. It is now a named link on the
-              page itself (<PageUp/>, below), on every screen, in one fixed place. */}
-          <div className="quick-topbar">
+          {/* The row is sticky on a desk (globals.css, "The trail"), and it opens with the
+              breadcrumb — the module's own chip, the way up, and the page's name — so
+              "where am I" is still answered 150 rows down a ledger. The trail replaced the
+              "← Khata" chip that used to sit above every page heading and scrolled away
+              with it; its ancestors ARE the way out now, resolved by lib/pageParents.js.
+
+              Behind the same Suspense boundary PageUp needed: the trail reads
+              `useSearchParams()` (the invoice's `?src=`, the Android bundle's record id),
+              and without a boundary every statically rendered page under this shell
+              fails the build. */}
+          <div className={`quick-topbar${scrolled ? ' is-stuck' : ''}`}>
+            <Suspense fallback={<span className="page-trail" />}>
+              <PageTrail variant="bar" {...trailProps} />
+            </Suspense>
             {user.role !== 'superadmin' && (
               <>
               {/* Not an input. Everything this used to do — and screens and actions,
@@ -1741,26 +1786,8 @@ export default function DashboardShell({ role, navItems, children }) {
           {/* Keyed by route so a fresh page swap always replays the fade-in, instead of
               content just snapping into place — the same polish every card entrance on
               this dashboard already has, applied once at the page level. */}
-          <div key={pathname} className="page-transition">
-            {/* Above the page's own heading, and rendered by the shell rather than by the
-                page, for the reason written at the top of lib/pageParents.js: a way out
-                that each screen has to remember to build is a way out that most screens
-                do not have. It renders nothing on the home screen, which has nothing
-                above it.
-
-                The boundary is Next's requirement, not ours: PageUp reads
-                `useSearchParams()` (the invoice screen's `?src=`, and the record id in
-                the Android bundle), and a component that does so must sit under a
-                Suspense boundary or every statically rendered page under this shell
-                fails the build. Keeping the boundary here means no page has to grow one
-                on this component's account. */}
-            <Suspense fallback={null}>
-              <PageUp
-                navItems={reachableNav}
-                home={user.role === 'superadmin' ? '/admin' : '/seller'}
-                labelFor={(item) => navLabel(item, user, t)}
-              />
-            </Suspense>
+          {/* The ref is how the trail reads this page's <h1> — see usePageHeading. */}
+          <div key={pathname} ref={setPageNode} className="page-transition">
             <ModuleNavigationContext.Provider value={setLoadingRoute}>
               {children}
             </ModuleNavigationContext.Provider>

@@ -105,7 +105,12 @@ export default function SupplyBillPrintPage() {
       {error && <div className="error-banner invoice-noprint">{error}</div>}
 
       <div className="invoice-actionbar invoice-noprint">
-        <span className="invoice-actionbar-doc">
+        {/* `data-trail` names this document in the breadcrumb (PageTrail.js): the heading
+            above says what KIND of page this is, and the trail wants which one. */}
+        <span
+          className="invoice-actionbar-doc"
+          data-trail={[invoice?.number, invoice?.buyer?.name].filter(Boolean).join(' · ') || undefined}
+        >
           {invoice ? invoice.number : ''}
           {invoice?.buyer?.name && <em>{invoice.buyer.name}</em>}
         </span>

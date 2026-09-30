@@ -26702,7 +26702,9 @@ button {
   padding-top: 0.6rem;
 }
 
-.section-charge-row > label {
+/* Not the switch: it is a <label> too, and `flex: 1` on it stretched the toggle across half
+   the ticket and squeezed the words beside it into a column. */
+.section-charge-row > label:not(.switch) {
   display: flex;
   flex-direction: column;
   gap: 0.05rem;
@@ -47793,93 +47795,265 @@ select:disabled {
   font-size: var(--fs-sm);
 }
 
-/* ---------- Up: the one way out of a screen ------------------------------------------
+/* ---------- The trail: where am I, answered from the chrome ---------------------------
  *
  * Appended last, after the breakpoints, for the reason recorded in the responsive round:
  * whatever lands at the bottom of this file wins.
  *
- * Rendered by the shell on every screen that has something above it (app/components/
- * PageUp.js, lib/pageParents.js), so its job here is to be recognisable in the same spot
- * on sixty screens without ever competing with the one loud action on any of them.
+ * Replaces `.page-up`, the "← Khata" chip that sat above every page heading and scrolled
+ * away with it. The owner's ask was that a person who has scrolled can still tell where
+ * they are, so the answer moved into the one surface that stays: the desk tool row, now
+ * sticky, and the phone app bar, which already was. See app/components/PageTrail.js.
  *
- *   - 30px, outlined, muted. Per the chrome rule this is a control, not an action: the
- *     filled button on these screens takes a payment or prints a bill, and a second
- *     coloured button that only LEAVES would be the loudest thing on a quiet screen.
- *   - It carries a WORD, not just an arrow. The word is the destination, and it is what
- *     makes the control safe to show everywhere — see PageUp.js.
- *   - It gains the brand on hover, which is the only moment it needs to look pressable.
+ *   [chip]  Overview › Khata › Ramesh Patil
  *
- * Logical properties throughout, and the arrow mirrors under `dir="rtl"`: in Urdu the
- * page reads right-to-left and an arrow pointing at the far edge of the screen points
- * away from where it goes.
+ *   - The chip is the module's own colour (lib/moduleTones.js), the same squircle as the
+ *     dashboard shortcuts and ⌘K — that is the branded part, and it is a name, not
+ *     decoration. Overview and Settings carry no module hue, so there it wears the accent.
+ *   - Ancestors are quiet links (they are the way out); the page's name is the one bold
+ *     word. Per the chrome rule nothing here is filled: the loud button on these screens
+ *     takes a payment or prints a bill.
+ *   - At rest the bar has no floor at all — chrome never wears a card. Once the page has
+ *     moved under it, a blurred wash of the page colour and a hairline fade in, or the rows
+ *     would scroll straight through the words.
  */
-.page-up {
+@media (min-width: 901px) {
+  .quick-topbar {
+    /* How far the wash reaches past the bar on each side, so it covers the page gutter
+       instead of stopping 2rem short of the column's edge. Tracks .content-area's own
+       horizontal padding, which the 901–1280px band narrows. */
+    --bar-bleed: 2.25rem;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    align-items: center;
+    /* Exactly --topbar-h tall: the token existed before this bar did, and the settings nav,
+       the labels studio, the day-book date rows and the support queue already park
+       themselves that far down. The negative margin hands back the extra height at rest so
+       the row sits where it always did. */
+    box-sizing: border-box;
+    min-height: var(--topbar-h);
+    margin-top: calc((var(--topbar-h) - 40px) / -2);
+  }
+
+  /* The page's own sticky strips used to stick at the very top of the window, which is now
+     underneath this bar. Each moves down by exactly the bar's height. */
+  .reorder-bar,
+  .invoice-actionbar {
+    top: var(--topbar-h);
+  }
+
+  .invoice-controls,
+  .invoice-zoombar {
+    top: calc(var(--topbar-h) + 4.2rem);
+  }
+
+  .invoice-controls {
+    max-height: calc(100vh - var(--topbar-h) - 5.5rem);
+  }
+
+  .campaign-preview,
+  .loy-rules-side {
+    top: calc(var(--topbar-h) + 1rem);
+  }
+
+  /* A jump to an anchor (/seller/billing#bills) must land below the bar, not under it. */
+  .bill-register {
+    scroll-margin-top: calc(var(--topbar-h) + 0.75rem);
+  }
+
+  .quick-topbar::before {
+    content: '';
+    position: absolute;
+    inset: 0 calc(-1 * var(--bar-bleed));
+    z-index: -1;
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    border-bottom: 1px solid var(--border);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    pointer-events: none;
+  }
+
+  .quick-topbar.is-stuck::before {
+    opacity: 1;
+  }
+
+  /* The tools keep the right-hand end whether or not the trail rendered (it renders nothing
+     outside the console, and briefly while the page mounts). */
+  .quick-topbar > .cmdk-trigger {
+    margin-inline-start: auto;
+    /* A long customer name is what gives way (it ellipsises), not the search box. */
+    min-width: 200px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1280px) {
+  .quick-topbar {
+    --bar-bleed: 1.4rem;
+  }
+}
+
+.page-trail {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-inline-end: auto;
+}
+
+/* Overview, Settings and anything new have no module hue (slot 0 is a neutral slate).
+   The chip still has to say "this app", so there it takes the accent. */
+.page-trail-chip.mod-tone-0 {
+  --mod: var(--brand-text);
+  --mod-wash: var(--brand);
+}
+
+.page-trail-list {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+}
+
+.page-trail-step {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  max-width: 100%;
-  height: 30px;
-  margin: 0 0 0.55rem;
-  padding-inline: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  box-shadow: var(--card-hairline);
+  gap: 0.3rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* The page's name is what gives way on a narrow bar — it ellipsises; the way out does not. */
+.page-trail-step.is-current {
+  flex-shrink: 1;
+}
+
+.page-trail-link {
+  padding: 0.25rem 0.4rem;
+  margin-inline: -0.4rem;
+  border-radius: 6px;
   color: var(--text-muted);
-  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.page-trail-link:hover {
+  color: var(--brand-text);
+  background: color-mix(in srgb, var(--brand) 9%, transparent);
+}
+
+.page-trail-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The page's own name when a section follows it (Settings › Printers): ancestor weight,
+   not a link — it is the page you are on. */
+.page-trail-page {
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.page-trail-sep {
+  flex-shrink: 0;
+  margin-inline-start: 0.35rem;
+  color: var(--text-faint);
+}
+
+.page-trail-current {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--fs-base);
   font-weight: 700;
   letter-spacing: -0.01em;
-  line-height: 1;
+}
+
+/* Only the nearest ancestor survives a laptop-width bar: it is the way out, and the rest
+   are reachable from it. */
+@media (max-width: 1180px) {
+  .page-trail-step.is-far {
+    display: none;
+  }
+}
+
+/* A phone gets the trail in its app bar instead (below), so the tool row loses it. */
+@media (max-width: 900px) {
+  .quick-topbar .page-trail {
+    display: none;
+  }
+}
+
+/* ---- the phone app bar: the name, with the way out above it ---- */
+.page-trail-app {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+}
+
+.page-trail-app-up {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  max-width: 100%;
+  /* A bigger target than the 12px line it draws. */
+  padding-block: 0.2rem;
+  margin-block: -0.2rem 0;
+  color: var(--nav-text-muted, var(--text-muted));
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.01em;
   text-decoration: none;
-  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
 }
 
-.page-up-arrow {
-  flex-shrink: 0;
-  transition: transform 0.16s ease;
-}
-
-[dir='rtl'] .page-up-arrow {
-  transform: scaleX(-1);
-}
-
-/* The label is the destination, so it is what survives a narrow screen — the arrow never
-   shrinks and the word ellipsises instead of wrapping the pill onto two lines. */
-.page-up-label {
+.page-trail-app-up span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.page-up:hover {
-  border-color: color-mix(in srgb, var(--brand) 40%, var(--border));
-  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+.page-trail-app-up:active {
   color: var(--brand-text);
 }
 
-.page-up:hover .page-up-arrow {
-  transform: translateX(-2px);
+.page-trail-app-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+  font-weight: 700;
 }
 
-[dir='rtl'] .page-up:hover .page-up-arrow {
-  transform: scaleX(-1) translateX(-2px);
+/* In Urdu the page reads right-to-left: an arrow or chevron pointing at the far edge
+   would point away from where it goes. */
+[dir='rtl'] .page-trail-sep,
+[dir='rtl'] .page-trail-arrow {
+  transform: scaleX(-1);
 }
 
-.page-up:active {
-  transform: translateY(1px);
-}
-
-.page-up:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-/* Chrome, not content. Every print surface in the app (invoice, purchase order, supplier
-   bill, labels) hides its controls the same way; this one is mounted by the shell, above
-   the page, so it has to be named here rather than by a page remembering to. */
 @media print {
-  .page-up {
+  .page-trail,
+  .page-trail-app {
     display: none !important;
   }
 }
@@ -56983,4 +57157,104 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
 .thermal-receipt .tr-row4.tr-narrow,
 .thermal-receipt .tr-row4.tr-item-head {
   column-gap: 1.2mm;
+}
+
+/* ---------- Parcel & delivery charges (Tables) -----------------------------------------
+ *
+ * Appended last, per the responsive round's rule.
+ *
+ * The charge row on a takeaway ticket reuses .section-charge-row, so it reads as the same
+ * kind of thing as the AC-hall charge above it. Its amount is an input rather than a figure,
+ * because a delivery two streets away and one across town are different trips; it stays
+ * small, since the loud control on this ticket is Settle.
+ */
+.takeaway-charge-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  font-weight: 800;
+}
+
+.takeaway-charge-input input {
+  width: 4.5rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  text-align: right;
+}
+
+.takeaway-charge-input input::placeholder {
+  /* The default amount shows as the placeholder: dark enough to read as "this is what
+     will be charged", not as an empty box. */
+  color: var(--text);
+  opacity: 1;
+}
+
+.section-charge-row__amount.is-free {
+  color: var(--success);
+}
+
+.section-charge-row.is-unset {
+  justify-content: space-between;
+}
+
+.takeaway-unset {
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+/* Manage tables: the card under the sections, and its form. */
+.manage-takeaway {
+  margin-top: 0.9rem;
+}
+
+.manage-takeaway .manage-section__head {
+  border-bottom: 0;
+}
+
+.manage-takeaway .manage-section__title h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.manage-takeaway .manage-charge {
+  white-space: normal;
+}
+
+.manage-takeaway-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.manage-takeaway-block > strong {
+  font-size: var(--fs-sm);
+}
+
+/* "Use ₹30, same as your online store" — a suggestion, so it looks like a hint that can be
+   tapped rather than a button competing with Save. */
+.manage-suggest {
+  display: inline;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--brand-text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: start;
+  cursor: pointer;
+}
+
+.manage-suggest:hover {
+  text-decoration: underline;
 }

@@ -8,7 +8,7 @@ import { useToast } from '../../components/Toast';
 import Modal from '../../components/Modal';
 import Dropdown from '../../components/Dropdown';
 import { useConfirm } from '../../components/ConfirmDialog';
-import { PlusIcon, UsersIcon, EditIcon, LayersIcon, ChevronLeftIcon, TableIcon, TrashIcon, LockIcon } from '../../components/Icons';
+import { PlusIcon, UsersIcon, EditIcon, LayersIcon, ChevronLeftIcon, TableIcon, TrashIcon, LockIcon, ReceiptIcon } from '../../components/Icons';
 import { formatRupees } from '../../../lib/format';
 import { TableSeats, autoSides } from './FloorVisuals';
 
@@ -192,6 +192,7 @@ export default function ManageTables({
   floorTables,
   setFloorTables,
   zoneSettings,
+  takeawaySettings,
   busyTableIds,
   // Owner, or a manager (billing + inventory). The server enforces the same rule; this only
   // decides whether the buttons are offered at all, so a waiter never taps into a refusal.
@@ -218,9 +219,50 @@ export default function ManageTables({
   const zoneConfig = useMemo(() => new Map(zoneSettings.map((z) => [z.name, z])), [zoneSettings]);
   const chargeLabelFor = (zone) => zoneConfig.get(zone)?.chargeLabel || t('tables.sectionChargeDefault', { zone });
 
-  // One job on screen at a time: 'home' | 'add' | 'table' | 'section' | 'layout'.
-  const [view, setView] = useState(startWith === 'add' && canEdit ? { name: 'add', zone: '' } : { name: 'home' });
+  // One job on screen at a time: 'home' | 'add' | 'table' | 'section' | 'layout' | 'takeaway'.
+  const [view, setView] = useState(() => {
+    if (startWith === 'add' && canEdit) return { name: 'add', zone: '' };
+    if (startWith === 'takeaway' && canEdit) return { name: 'takeaway' };
+    return { name: 'home' };
+  });
   const [busy, setBusy] = useState(false);
+
+  // ---- parcel & delivery charges ----
+  // Amounts are strings while typed; '' means none. Seeded from what is saved each time the
+  // form opens, so backing out of a half-typed change leaves nothing behind.
+  const takeawayFormFrom = (cfg) => ({
+    parcelCharge: cfg?.parcelCharge ? String(cfg.parcelCharge) : '',
+    parcelLabel: cfg?.parcelLabel || '',
+    deliveryCharge: cfg?.deliveryCharge ? String(cfg.deliveryCharge) : '',
+    deliveryLabel: cfg?.deliveryLabel || '',
+    freeDeliveryAbove: cfg?.freeDeliveryAbove ? String(cfg.freeDeliveryAbove) : '',
+  });
+  const [takeawayForm, setTakeawayForm] = useState(() => takeawayFormFrom(takeawaySettings));
+
+  function openTakeaway() {
+    setTakeawayForm(takeawayFormFrom(takeawaySettings));
+    setView({ name: 'takeaway' });
+  }
+
+  async function saveTakeaway(event) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await apiFetch('/api/seller/floor-tables/takeaway-charges', {
+        method: 'PUT',
+        body: JSON.stringify(takeawayForm),
+      });
+      await onReload();
+      toast.success(t('tables.takeawayCharges.saved'));
+      // Opened straight from an order's ticket: the job is done, go back to the order.
+      if (startWith === 'takeaway') onClose();
+      else setView({ name: 'home' });
+    } catch (err) {
+      toast.error(tableErrorText(err, t));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // ---- add tables ----
   /**
@@ -868,6 +910,104 @@ export default function ManageTables({
     );
   }
 
+  if (view.name === 'takeaway') {
+    const parcel = Number(takeawayForm.parcelCharge) || 0;
+    const delivery = Number(takeawayForm.deliveryCharge) || 0;
+    const freeAbove = Number(takeawayForm.freeDeliveryAbove) || 0;
+    const set = (key) => (e) => setTakeawayForm((f) => ({ ...f, [key]: e.target.value }));
+    const online = takeawaySettings?.storefrontDelivery || 0;
+    return (
+      <Modal
+        as="form"
+        onSubmit={saveTakeaway}
+        onClose={onClose}
+        title={t('tables.takeawayCharges.title')}
+        maxWidth={540}
+        footer={
+          <>
+            {startWith === 'takeaway' ? null : back}
+            <button type="submit" className="btn btn-primary btn-inline" disabled={busy}>
+              {busy ? t('common.saving') : t('common.save')}
+            </button>
+          </>
+        }
+      >
+        <p className="field-hint" style={{ margin: '0 0 1rem' }}>{t('tables.takeawayCharges.intro')}</p>
+
+        <div className="manage-takeaway-block">
+          <strong>{t('tables.type.parcel')}</strong>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="tw-parcel">{t('tables.takeawayCharges.parcelAmount')}</label>
+              <input id="tw-parcel" type="number" min="0" max="1000" step="1" inputMode="decimal" value={takeawayForm.parcelCharge} onChange={set('parcelCharge')} placeholder="0" />
+            </div>
+            <div className="field">
+              <label htmlFor="tw-parcel-label">{t('tables.takeawayCharges.lineName')}</label>
+              <input id="tw-parcel-label" maxLength={40} value={takeawayForm.parcelLabel} onChange={set('parcelLabel')} placeholder={t('tables.parcelChargeDefault')} />
+            </div>
+          </div>
+        </div>
+
+        <div className="manage-takeaway-block">
+          <strong>{t('tables.type.delivery')}</strong>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="tw-delivery">{t('tables.takeawayCharges.deliveryAmount')}</label>
+              <input id="tw-delivery" type="number" min="0" max="5000" step="1" inputMode="decimal" value={takeawayForm.deliveryCharge} onChange={set('deliveryCharge')} placeholder="0" />
+              {/* The online store's delivery charge, offered — never copied in on its own. */}
+              {online > 0 && !takeawayForm.deliveryCharge && (
+                <button
+                  type="button"
+                  className="field-hint manage-suggest"
+                  onClick={() => setTakeawayForm((f) => ({ ...f, deliveryCharge: String(online) }))}
+                >
+                  {t('tables.takeawayCharges.useOnline', { amount: formatRupees(online, lang) })}
+                </button>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="tw-delivery-label">{t('tables.takeawayCharges.lineName')}</label>
+              <input id="tw-delivery-label" maxLength={40} value={takeawayForm.deliveryLabel} onChange={set('deliveryLabel')} placeholder={t('tables.deliveryChargeDefault')} />
+            </div>
+          </div>
+          {delivery > 0 && (
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="tw-free">{t('tables.takeawayCharges.freeAbove')}</label>
+              <input id="tw-free" type="number" min="0" step="50" inputMode="decimal" value={takeawayForm.freeDeliveryAbove} onChange={set('freeDeliveryAbove')} placeholder={t('tables.takeawayCharges.freeAbovePlaceholder')} />
+              <p className="field-hint" style={{ margin: '0.3rem 0 0' }}>{t('tables.takeawayCharges.freeAboveHint')}</p>
+            </div>
+          )}
+        </div>
+
+        {/* A worked example per kind, like the section charge's — what the customer's bill
+            will say. One box each, because a parcel and a delivery never share a bill. */}
+        {parcel > 0 && (
+          <div className="manage-example">
+            <span>{t('tables.takeawayCharges.exampleParcel')}</span>
+            <strong>{formatRupees(300, lang)}</strong>
+            <span>{takeawayForm.parcelLabel.trim() || t('tables.parcelChargeDefault')}</span>
+            <strong>+ {formatRupees(parcel, lang)}</strong>
+            <span className="is-total">{t('tables.manage.exampleTotal')}</span>
+            <strong className="is-total">{formatRupees(300 + parcel, lang)}</strong>
+          </div>
+        )}
+        {delivery > 0 && (() => {
+          const free = freeAbove > 0 && freeAbove <= 300;
+          return (
+            <div className="manage-example" style={{ marginTop: parcel > 0 ? '0.6rem' : 0 }}>
+              <span>{t('tables.takeawayCharges.exampleDelivery')}</span>
+              <strong>{formatRupees(300, lang)}</strong>
+              <span>{takeawayForm.deliveryLabel.trim() || t('tables.deliveryChargeDefault')}</span>
+              <strong>{free ? t('tables.free') : `+ ${formatRupees(delivery, lang)}`}</strong>
+              <span className="is-total">{t('tables.manage.exampleTotal')}</span>
+              <strong className="is-total">{formatRupees(300 + (free ? 0 : delivery), lang)}</strong>
+            </div>
+          );
+        })()}
+      </Modal>
+    );
+  }
+
   if (view.name === 'layout') {
     return (
       <Modal onClose={onClose} title={t('tables.manage.layout')} maxWidth={760} footer={back}>
@@ -1016,6 +1156,40 @@ export default function ManageTables({
           </div>
         </>
       )}
+      <TakeawayCard settings={takeawaySettings} canEdit={canEdit} onEdit={openTakeaway} t={t} lang={lang} />
     </Modal>
+  );
+}
+
+/**
+ * Parcel & delivery charges on the Manage tables home. Rendered under the sections AND under
+ * the empty state: a parcel-only kitchen has no tables at all, and a setting it can only
+ * reach after building a floor plan it does not have is a setting it never finds.
+ */
+function TakeawayCard({ settings, canEdit, onEdit, t, lang }) {
+  const parts = [];
+  if (settings?.parcelCharge > 0) {
+    parts.push(`${settings.parcelLabel || t('tables.parcelChargeDefault')} ${formatRupees(settings.parcelCharge, lang)}`);
+  }
+  if (settings?.deliveryCharge > 0) {
+    parts.push(`${settings.deliveryLabel || t('tables.deliveryChargeDefault')} ${formatRupees(settings.deliveryCharge, lang)}`);
+  }
+  return (
+    <section className="manage-section manage-takeaway">
+      <header className="manage-section__head">
+        <div className="manage-section__title">
+          <h3><ReceiptIcon size={16} /> {t('tables.takeawayCharges.title')}</h3>
+          <span>{t('tables.takeawayCharges.cardHint')}</span>
+        </div>
+        <span className={`manage-charge${parts.length ? ' is-on' : ''}`}>
+          {parts.length ? parts.join(' · ') : t('tables.takeawayCharges.none')}
+        </span>
+        {canEdit && (
+          <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={onEdit}>
+            <EditIcon size={15} /> {t('tables.takeawayCharges.edit')}
+          </button>
+        )}
+      </header>
+    </section>
   );
 }

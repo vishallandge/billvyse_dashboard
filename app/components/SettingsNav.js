@@ -125,6 +125,9 @@ export default function SettingsNav({ sections, activeId, query, onQueryChange, 
                 data-section={section.id}
                 className={activeId === section.id ? 'is-active' : undefined}
                 aria-current={activeId === section.id ? 'true' : undefined}
+                // The breadcrumb follows the scroll-spy: "Settings › Printers" while the
+                // printers panel is the one on screen (PageTrail.js reads this).
+                data-trail-section={activeId === section.id ? '' : undefined}
                 onClick={(event) => jump(event, section.id)}
               >
                 <Icon size={16} aria-hidden="true" />
