@@ -56926,3 +56926,61 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
 .thermal-receipt .tr-qr img {
   image-rendering: pixelated;
 }
+
+/* Receipt item table: Item Description · Qty · Rate · Amount (ThermalReceipt.js).
+   The name takes what is left and wraps; the three figures size to their content and
+   never wrap, so a long product name can never push a price onto the next line. */
+.thermal-receipt .tr-row4 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  column-gap: 1.8mm;
+  align-items: start;
+}
+
+.thermal-receipt .tr-row4 .tr-qty,
+.thermal-receipt .tr-row4 .tr-rate,
+.thermal-receipt .tr-row4 .tr-amt {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.thermal-receipt .tr-row4 .tr-qty,
+.thermal-receipt .tr-row4 .tr-rate {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.thermal-receipt .tr-row4.tr-item-head span {
+  font-size: 9.5px;
+}
+
+/* A name too long for its column (or any name on a 58mm roll) takes the whole first line;
+   Qty · Rate · Amount then flow onto the next line under their own headings. */
+.thermal-receipt .tr-row4.tr-stacked .tr-name {
+  grid-column: 1 / -1;
+}
+
+.thermal-receipt .tr-row4.tr-stacked:not(.tr-item-head) .tr-qty,
+.thermal-receipt .tr-row4.tr-stacked:not(.tr-item-head) .tr-rate,
+.thermal-receipt .tr-row4.tr-stacked:not(.tr-item-head) .tr-amt {
+  margin-top: 0.3mm;
+}
+
+/* On the stacked line the figures must land under their headings, not in the first free
+   cell (which would be column 1, under the name). */
+.thermal-receipt .tr-row4.tr-stacked .tr-qty { grid-column: 2; }
+.thermal-receipt .tr-row4.tr-stacked .tr-rate { grid-column: 3; }
+.thermal-receipt .tr-row4.tr-stacked .tr-amt { grid-column: 4; }
+
+/* The old flex rule's `gap: 2mm` becomes a ROW gap on a grid, opening a blank line between
+   a name and its figures. Rows sit close; columns keep their breathing room. */
+.thermal-receipt .tr-row4 {
+  row-gap: 0.3mm;
+}
+
+/* 58mm: three figures and their gaps only just fit 48mm of print at a big text size. */
+.thermal-receipt .tr-row4.tr-narrow,
+.thermal-receipt .tr-row4.tr-item-head {
+  column-gap: 1.2mm;
+}

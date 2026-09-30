@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import UpiQr from './UpiQr';
 import usePrinters from '../../lib/printer/usePrinters';
+import { getRolePrinter, printerDots } from '../../lib/printer';
+import { shopPaper } from '../../lib/printer/slip';
 
 // The receipt the browser "Print" button actually prints. Rendered through a portal as a
 // direct child of <body> and hidden on screen (display:none); handlePrint adds a
@@ -18,6 +20,20 @@ import usePrinters from '../../lib/printer/usePrinters';
 
 function money(value) {
   return `₹${Number(value || 0).toFixed(2)}`;
+}
+
+// A column figure: two decimals, no ₹ (the column head and the total carry the currency).
+function figure(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+// "2", "0.25 kg", "1.5 L" — a counted piece needs no unit, a weighed or measured one does.
+// Trailing zeros go: 0.500 kg reads as 0.5 kg.
+function qtyText(item) {
+  const qty = Number(Number(item.quantity || 0).toFixed(3));
+  const unit = String(item.unit || '').trim();
+  const counted = !unit || /^(pc|pcs|piece|pieces|nos?|unit|units)$/i.test(unit);
+  return counted ? String(qty) : `${qty} ${unit}`;
 }
 
 // The lots a line went out of, from whichever of the two shapes this component was handed.
@@ -41,6 +57,18 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
   // Settings → Printers can leave the bill-link QR off the slip: ~3cm of roll per bill.
   const { settings: printerSettings } = usePrinters();
   const showBillQr = printerSettings.billQr !== false;
+
+  // How much room the item name gets. Four columns on one line is the bill everyone reads,
+  // but on a 58mm roll — or at a big text size — Qty, Rate and Amount leave the name two
+  // letters wide and it prints one syllable per line. Then the name takes a line of its
+  // own and the three figures sit under their headings on the next.
+  const receiptPrinter = getRolePrinter('receipt');
+  const rollMm = receiptPrinter ? (printerDots(receiptPrinter) > 384 ? 80 : 58) : shopPaper(shop).widthMm;
+  const textScale = printerSettings.textScale || 1.4;
+  const narrow = rollMm < 70 || textScale >= 1.8;
+  // Characters that fit the name column on one line at this size (80mm roll).
+  const nameFits = Math.floor(22 / textScale);
+  const stacked = (name) => narrow || String(name || '').length > nameFits;
 
   // Offline "pending sync" receipts aren't real bills yet — nothing to print.
   if (!receipt || receipt.offline || !mounted) return null;
@@ -92,17 +120,21 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
       <div className="tr-rule" />
 
       <div className="tr-items">
-        <div className="tr-item tr-item-head">
-          <span className="tr-name">{t('seller.productName')}</span>
-          <span className="tr-amt">{t('seller.price')}</span>
+        {/* Four columns — Item Description · Qty · Rate · Amount — the layout every
+            shopkeeper already reads on a printed bill. Figures without the ₹ sign: it sits
+            once on the total, and four ₹ per line is width an 80mm roll does not have. */}
+        {/* The heading is always two lines — "Item Description" over "Qty Rate Amount" —
+            so it never breaks mid-word whatever the paper or text size. */}
+        <div className="tr-row4 tr-item-head tr-stacked">
+          <span className="tr-name">{t('seller.receiptColItem')}</span>
+          <span className="tr-qty">{t('seller.receiptColQty')}</span>
+          <span className="tr-rate">{t('seller.receiptColRate')}</span>
+          <span className="tr-amt">{t('seller.receiptColAmount')}</span>
         </div>
         {receipt.items.map((item, index) => (
-          <div className="tr-item" key={index}>
+          <div className={`tr-row4 tr-item${stacked(item.name) ? ' tr-stacked' : ''}${narrow ? ' tr-narrow' : ''}`} key={index}>
             <div className="tr-name">
               <div className="tr-item-name">{item.name}</div>
-              <div className="tr-item-sub">
-                {item.quantity}{item.unit ? ` ${item.unit}` : ''} × {money(item.price)}
-              </div>
               {/* Batch and expiry on the counter slip too, not only on the A4 invoice — a
                   chemist hands out far more of these, and a strip is brought back against
                   whichever piece of paper went out with it. Only ever present on a
@@ -127,7 +159,9 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
                 </div>
               )}
             </div>
-            <span className="tr-amt">{money(item.lineTotal)}</span>
+            <span className="tr-qty">{qtyText(item)}</span>
+            <span className="tr-rate">{figure(item.price)}</span>
+            <span className="tr-amt">{figure(item.lineTotal)}</span>
           </div>
         ))}
       </div>
