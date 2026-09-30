@@ -6,6 +6,7 @@ import UpiQr from './UpiQr';
 import usePrinters from '../../lib/printer/usePrinters';
 import { getRolePrinter, printerDots } from '../../lib/printer';
 import { shopPaper } from '../../lib/printer/slip';
+import { usePrintLogo } from '../../lib/printer/logo';
 
 // The receipt the browser "Print" button actually prints. Rendered through a portal as a
 // direct child of <body> and hidden on screen (display:none); handlePrint adds a
@@ -57,6 +58,10 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
   // Settings → Printers can leave the bill-link QR off the slip: ~3cm of roll per bill.
   const { settings: printerSettings } = usePrinters();
   const showBillQr = printerSettings.billQr !== false;
+  // The shop's logo, from Settings → Invoice look. data-print-logo tells the printer code to
+  // turn it into black-and-white dots a thermal head can print (lib/printer/raster.js).
+  const logoUrl = usePrintLogo(shop);
+  const showLogo = Boolean(logoUrl) && printerSettings.printLogo !== false;
 
   // How much room the item name gets. Four columns on one line is the bill everyone reads,
   // but on a 58mm roll — or at a big text size — Qty, Rate and Amount leave the name two
@@ -96,6 +101,11 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
   return createPortal(
     <div className="thermal-receipt" aria-hidden="true">
       <div className="tr-head">
+        {showLogo && (
+          <div className="tr-logo" data-print-logo="">
+            <img src={logoUrl} alt="" />
+          </div>
+        )}
         <div className="tr-shop">{shop?.shopName || 'Dukaan'}</div>
         {shop?.shopAddress && <div className="tr-line">{shop.shopAddress}</div>}
         {shop?.shopPhone && <div className="tr-line">Ph: {shop.shopPhone}</div>}

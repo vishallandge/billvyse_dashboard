@@ -1050,6 +1050,39 @@ export default function DashboardShell({ role, navItems, children }) {
    * counter, not in Settings — and a way back that has to be gone looking for is not a way
    * back at all. So the strip is on every screen, and so is this button.
    */
+  /**
+   * Keep /auth/me fresh while the dashboard stays open.
+   *
+   * Plan-decided things live on this object — whether the bill prints "Powered by BillVyse",
+   * the paper every print follows, the logo stamp — and the platform admin can change them
+   * at any time. A billing counter is opened in the morning and never reloaded, so without
+   * this a switch flipped at noon would not reach the counter's paper until tomorrow. Re-read
+   * quietly every five minutes and whenever the tab comes back into view; a failed read
+   * keeps what is on screen.
+   */
+  useEffect(() => {
+    if (!checked) return undefined;
+    let lastRun = Date.now();
+    const refresh = () => {
+      if (Date.now() - lastRun < 60 * 1000) return;
+      lastRun = Date.now();
+      apiFetch('/api/auth/me')
+        .then(({ user: fresh }) => {
+          if (fresh) setUser((current) => (current && current.id === fresh.id ? { ...current, ...fresh } : current));
+        })
+        .catch(() => {});
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const timer = setInterval(refresh, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [checked]);
+
   async function handleCancelDeletion() {
     setCancellingDeletion(true);
     try {

@@ -57258,3 +57258,21 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
 .manage-suggest:hover {
   text-decoration: underline;
 }
+
+/* Shop logo at the top of the receipt (ThermalReceipt.js). Direct printing sizes and
+   dithers it itself (lib/printer/raster.js); these rules cover the browser's Print screen,
+   where the slip is zoomed by --bv-text-scale, so the size is divided back out. */
+.thermal-receipt .tr-logo {
+  text-align: center;
+  margin-bottom: 0.8mm;
+  line-height: 0;
+}
+
+.thermal-receipt .tr-logo img {
+  display: block;
+  margin: 0 auto;
+  max-width: calc(32mm / var(--bv-text-scale, 1));
+  max-height: calc(16mm / var(--bv-text-scale, 1));
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.4);
+}

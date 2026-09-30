@@ -72,7 +72,10 @@ export default function KotTicket({ kot, order, shop, t }) {
       </div>
 
       <div className="kt-rule kt-dashed" />
-      <div className="kt-foot">Powered by BillVyse</div>
+      {/* Same rule as the receipt and the invoice: the plan (set by the platform admin)
+          decides whether a shop may drop the line, and the server resolves it into
+          showAppCredit on /auth/me. It used to print here unconditionally. */}
+      {shop?.showAppCredit !== false && <div className="kt-foot">Powered by BillVyse</div>}
     </div>,
     document.body
   );

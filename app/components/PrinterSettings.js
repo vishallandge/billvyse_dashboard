@@ -25,6 +25,7 @@ import {
   setTextScale,
   setCompact,
   setBillQr,
+  setPrintLogo,
   stepWidth,
   getRolePrinter,
   printerDots,
@@ -39,6 +40,7 @@ import {
 } from '../../lib/printer';
 import { cleanName, shortAddress } from '../../lib/printer/names';
 import { rasterizeElement } from '../../lib/printer/raster';
+import { usePrintLogo } from '../../lib/printer/logo';
 import { webSupport, isChooserCancel, bridgeAvailable, bridgeScan, bridgeWindowsPrinters, bridgeFixWindowsPort } from '../../lib/printer/webTransports';
 import { isNativeShell, nativePrinter, nativeScan, nativeSupport } from '../../lib/printer/nativeTransport';
 
@@ -212,6 +214,7 @@ export default function PrinterSettings() {
           <small>{t('printer.compactSlipHint')}</small>
         </span>
       </div>
+      <PrintLogoSwitch settings={settings} />
       <div className="printer-auto">
         <Switch checked={settings.billQr !== false} onChange={(on) => setBillQr(on)} label={t('printer.billQr')} id="printer-bill-qr" />
         <span>
@@ -248,6 +251,8 @@ function SlipTextSize({ settings }) {
   const { t } = useLanguage();
   const toast = useToast();
   const user = useDashboardUser();
+  const logoUrl = usePrintLogo(user);
+  const withLogo = Boolean(logoUrl) && settings.printLogo !== false;
   const saved = settings.textScale || TEXT_SCALE_DEFAULT;
   const [scale, setScale] = useState(saved);
   const [preview, setPreview] = useState(null); // { url, cm }
@@ -266,7 +271,7 @@ function SlipTextSize({ settings }) {
     const timer = setTimeout(async () => {
       const sample = document.createElement('div');
       sample.className = 'thermal-receipt';
-      sample.innerHTML = sampleReceiptHtml(user?.shopName || 'BillVyse');
+      sample.innerHTML = sampleReceiptHtml(user?.shopName || 'BillVyse', withLogo ? logoUrl : null);
       try {
         const bitmap = await rasterizeElement(sample, { widthDots: dots, scale, compact: settings.compact !== false });
         if (cancelled || !canvasRef.current) return;
@@ -296,7 +301,7 @@ function SlipTextSize({ settings }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [scale, dots, dotsPerMm, settings.compact, user?.shopName]);
+  }, [scale, dots, dotsPerMm, settings.compact, user?.shopName, withLogo, logoUrl]);
 
   const step = (delta) => setScale((current) => Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, Math.round((current + delta) * 10) / 10)));
   const dirty = Math.abs(scale - saved) > 0.001;
@@ -355,13 +360,32 @@ function SlipTextSize({ settings }) {
   );
 }
 
+/**
+ * "Print the shop logo on slips". Shown switched off and explained until there is a logo
+ * to print, so the switch never sits there doing nothing.
+ */
+function PrintLogoSwitch({ settings }) {
+  const { t } = useLanguage();
+  const logoUrl = usePrintLogo(useDashboardUser());
+  return (
+    <div className="printer-auto">
+      <Switch checked={Boolean(logoUrl) && settings.printLogo !== false} onChange={(on) => setPrintLogo(on)}
+        label={t('printer.printLogo')} id="printer-print-logo" disabled={!logoUrl} />
+      <span>
+        <strong>{t('printer.printLogo')}</strong>
+        <small>{t(logoUrl ? 'printer.printLogoHint' : 'printer.printLogoNone')}</small>
+      </span>
+    </div>
+  );
+}
+
 // A typical three-line bill, in the receipt's own classes, for the preview.
-function sampleReceiptHtml(shopName) {
+function sampleReceiptHtml(shopName, logoUrl) {
   const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const row = (name, sub, amt) =>
     `<div class="tr-item"><div class="tr-name"><div class="tr-item-name">${name}</div><div class="tr-item-sub">${sub}</div></div><span class="tr-amt">${amt}</span></div>`;
   return `
-    <div class="tr-head"><div class="tr-shop">${esc(shopName)}</div><div class="tr-line">MG Road · Ph: 98765 43210</div></div>
+    <div class="tr-head">${logoUrl ? `<div class="tr-logo" data-print-logo=""><img src="${esc(logoUrl)}" alt=""></div>` : ''}<div class="tr-shop">${esc(shopName)}</div><div class="tr-line">MG Road · Ph: 98765 43210</div></div>
     <div class="tr-rule"></div>
     <div class="tr-meta"><span>Bill #1042</span><span>29/09/2026 · 06:15 pm</span></div>
     <div class="tr-rule"></div>
