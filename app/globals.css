@@ -57270,9 +57270,46 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
 
 .thermal-receipt .tr-logo img {
   display: block;
-  margin: 0 auto;
-  max-width: calc(32mm / var(--bv-text-scale, 1));
-  max-height: calc(16mm / var(--bv-text-scale, 1));
+  /* Width, place and darkness are the shop's choice (Settings → Printers → Logo), handed in
+     by lib/printer/slip.js as custom properties at print time. */
+  width: calc(var(--bv-logo-w, 40mm) / var(--bv-text-scale, 1));
+  max-width: 100%;
+  height: auto;
+  max-height: calc(40mm / var(--bv-text-scale, 1));
   object-fit: contain;
-  filter: grayscale(1) contrast(1.4);
+  margin-left: var(--bv-logo-align, auto);
+  margin-right: auto;
+  filter: var(--bv-logo-filter, grayscale(1) contrast(1.4));
+}
+
+/* Logo look (PrinterSettings.js → LogoLook): size, darkness and place, then the preview. */
+.printer-logo-look {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.printer-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.printer-logo-row .segmented {
+  margin-bottom: 0;
+}
+
+.printer-logo-label {
+  min-width: 92px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.printer-logo-pct {
+  min-width: 44px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }

@@ -26,6 +26,9 @@ import {
   setCompact,
   setBillQr,
   setPrintLogo,
+  setLogoLook,
+  printElement,
+  LOGO_PRESETS,
   stepWidth,
   getRolePrinter,
   printerDots,
@@ -215,6 +218,7 @@ export default function PrinterSettings() {
         </span>
       </div>
       <PrintLogoSwitch settings={settings} />
+      <LogoLook settings={settings} />
       <div className="printer-auto">
         <Switch checked={settings.billQr !== false} onChange={(on) => setBillQr(on)} label={t('printer.billQr')} id="printer-bill-qr" />
         <span>
@@ -375,6 +379,160 @@ function PrintLogoSwitch({ settings }) {
         <strong>{t('printer.printLogo')}</strong>
         <small>{t(logoUrl ? 'printer.printLogoHint' : 'printer.printLogoNone')}</small>
       </span>
+    </div>
+  );
+}
+
+/**
+ * How the logo prints, chosen by looking at it. The preview is the printer's own snapshot of
+ * the slip's top (logo, shop name, address) at this printer's width — black and white, the
+ * way the head will draw it. Nothing is kept until Save; "Test print" sends the unsaved look
+ * to the printer so it can be judged on real paper first.
+ */
+function LogoLook({ settings }) {
+  const { t } = useLanguage();
+  const toast = useToast();
+  const user = useDashboardUser();
+  const logoUrl = usePrintLogo(user);
+  const saved = settings.logo || { widthPct: 55, darkness: 0, align: 'center' };
+  const [look, setLook] = useState(saved);
+  const [testing, setTesting] = useState(false);
+  const canvasRef = useRef(null);
+  const printer = getRolePrinter('receipt');
+  const printerId = printer?.id;
+  const dots = printer ? printerDots(printer) : 576;
+  const savedKey = `${saved.widthPct}|${saved.darkness}|${saved.align}`;
+
+  useEffect(() => setLook(saved), [savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const head = () => {
+    const node = document.createElement('div');
+    node.className = 'thermal-receipt';
+    const esc = (v) => String(v || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    node.innerHTML = `<div class="tr-head"><div class="tr-logo" data-print-logo=""><img src="${esc(logoUrl)}" alt=""></div>`
+      + `<div class="tr-shop">${esc(user?.shopName || 'BillVyse')}</div>`
+      + `${user?.shopAddress ? `<div class="tr-line">${esc(user.shopAddress)}</div>` : ''}</div>`;
+    return node;
+  };
+
+  useEffect(() => {
+    if (!logoUrl) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const bitmap = await rasterizeElement(head(), {
+          widthDots: dots,
+          scale: settings.textScale || TEXT_SCALE_DEFAULT,
+          compact: settings.compact !== false,
+          logo: look,
+        });
+        if (cancelled || !canvasRef.current) return;
+        const canvas = canvasRef.current;
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        const image = ctx.createImageData(bitmap.width, bitmap.height);
+        for (let y = 0; y < bitmap.height; y += 1) {
+          for (let x = 0; x < bitmap.width; x += 1) {
+            const on = bitmap.data[y * bitmap.bytesPerRow + (x >> 3)] & (0x80 >> (x & 7));
+            const i = (y * bitmap.width + x) * 4;
+            const v = on ? 20 : 255;
+            image.data[i] = v;
+            image.data[i + 1] = v;
+            image.data[i + 2] = v;
+            image.data[i + 3] = 255;
+          }
+        }
+        ctx.putImageData(image, 0, 0);
+      } catch {
+        // preview is a convenience; printing does not depend on it
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [logoUrl, look.widthPct, look.darkness, look.align, dots, settings.textScale, settings.compact, user?.shopName, user?.shopAddress]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!logoUrl || settings.printLogo === false) return null;
+
+  const dirty = look.widthPct !== saved.widthPct || look.darkness !== saved.darkness || look.align !== saved.align;
+  const presetOf = Object.entries(LOGO_PRESETS).find(([, pct]) => pct === look.widthPct)?.[0];
+
+  async function testThisLook() {
+    if (!printerId) return;
+    setTesting(true);
+    try {
+      await printElement(printerId, head(), { logo: look });
+      toast.success(t('printer.testSent'));
+    } catch (err) {
+      toast.error(t(errorKey(err)));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="field printer-logo-look">
+      <label>{t('printer.logoLook')}</label>
+
+      <div className="printer-logo-row">
+        <span className="printer-logo-label">{t('printer.logoSize')}</span>
+        <div className="segmented segmented-sm" role="group">
+          {Object.entries(LOGO_PRESETS).map(([key, pct]) => (
+            <button key={key} type="button" className={presetOf === key ? 'active' : ''} onClick={() => setLook((l) => ({ ...l, widthPct: pct }))}>
+              {t(`printer.logo_${key}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="printer-size-row">
+        <input type="range" min="20" max="100" step="5" value={look.widthPct}
+          onChange={(event) => setLook((l) => ({ ...l, widthPct: Number(event.target.value) }))} aria-label={t('printer.logoSize')} />
+        <output className="printer-logo-pct">{look.widthPct}%</output>
+      </div>
+
+      <div className="printer-logo-row">
+        <span className="printer-logo-label">{t('printer.logoDarkness')}</span>
+        <div className="segmented segmented-sm" role="group">
+          {[[-1, 'printer.logoLighter'], [0, 'printer.logoNormal'], [1, 'printer.logoDarker']].map(([value, key]) => (
+            <button key={value} type="button" className={look.darkness === value ? 'active' : ''} onClick={() => setLook((l) => ({ ...l, darkness: value }))}>
+              {t(key)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="printer-logo-row">
+        <span className="printer-logo-label">{t('printer.logoAlign')}</span>
+        <div className="segmented segmented-sm" role="group">
+          {[['center', 'printer.logoCenter'], ['left', 'printer.logoLeft']].map(([value, key]) => (
+            <button key={value} type="button" className={look.align === value ? 'active' : ''} onClick={() => setLook((l) => ({ ...l, align: value }))}>
+              {t(key)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="printer-preview">
+        <div className="printer-preview-paper">
+          <canvas ref={canvasRef} />
+        </div>
+      </div>
+
+      <div className="printer-size-actions">
+        <button type="button" className="btn btn-primary btn-small btn-inline" disabled={!dirty}
+          onClick={() => { setLogoLook(look); toast.success(t('printer.logoSaved')); }}>
+          {t('printer.logoSave')}
+        </button>
+        {printerId && (
+          <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={testThisLook} disabled={testing}>
+            {testing ? <SpinnerIcon size={14} /> : <PrinterIcon size={15} />} {t('printer.logoTest')}
+          </button>
+        )}
+        {dirty && <button type="button" className="link-btn" onClick={() => setLook(saved)}>{t('printer.textSizeReset')}</button>}
+      </div>
+      <small className="field-hint">{t('printer.logoTip')}</small>
     </div>
   );
 }
