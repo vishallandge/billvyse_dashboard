@@ -26533,6 +26533,23 @@ button {
   background: linear-gradient(135deg, var(--surface-strong), var(--surface));
 }
 
+/* A split card can be 190px wide; four inline pills need ~250px, so "Khata" stuck out of
+   the card. Inside the card the pills share its width instead. */
+.guest-summary-card .segmented-mini {
+  display: flex;
+  width: 100%;
+}
+
+.guest-summary-card .segmented-mini button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 0 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .guest-summary-head {
   display: flex;
   align-items: baseline;
@@ -27112,6 +27129,230 @@ button {
 .order-bar__waiter.dropdown-field {
   width: auto;
   min-width: 130px;
+}
+
+/* ---------- One table on one screen ----------
+   The order bar is one slim row, the journey strip is slimmer, the chair picker is compact,
+   and on a desktop both columns are exactly the height of the screen: the menu's dishes
+   scroll inside their own box (the search and categories stay put above them) and the
+   ticket keeps its total pinned — so taking an order never scrolls the page. */
+.order-bar {
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.order-bar__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 34px;
+}
+
+.order-bar__waiter.dropdown-field .dropdown-trigger {
+  min-height: 34px;
+  padding: 0.3rem 0.65rem;
+  font-size: var(--fs-sm);
+}
+
+.order-bar ~ .fjourney {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.8rem;
+}
+
+.order-bar ~ .fjourney .fjourney__dot {
+  width: 26px;
+  height: 26px;
+}
+
+.order-bar ~ .fjourney .btn {
+  min-height: 36px;
+}
+
+.seatpick.is-compact {
+  gap: 0.85rem;
+  margin-bottom: 0.65rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.seatpick.is-compact .seatpick__stage .tview {
+  max-height: 64px;
+}
+
+.seatpick.is-compact .seatpick__side {
+  flex: 1;
+}
+
+.seatpick__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.seatpick__chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 36px;
+  height: 34px;
+  padding: 0 0.7rem;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.seatpick__chip.is-table {
+  font-weight: 700;
+}
+
+.seatpick__chip:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+
+.seatpick__chip.is-on {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand, #fff);
+}
+
+.seatpick__chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.seatpick__chip em {
+  min-width: 18px;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  color: var(--brand-text, var(--brand));
+  font-size: 0.7rem;
+  font-style: normal;
+  line-height: 18px;
+}
+
+.seatpick__chip.is-on em {
+  background: color-mix(in srgb, #fff 25%, transparent);
+  color: inherit;
+}
+
+.seatpick.is-compact .seatpick__side {
+  gap: 0.2rem;
+}
+
+.seatpick.is-compact .seatpick__side strong {
+  font-size: var(--fs-sm);
+}
+
+.seatpick.is-compact .seatpick__now {
+  font-size: var(--fs-xs);
+}
+
+/* Ticket lines on a table: a tap-sized stepper, not a form field — four dishes used to
+   fill the whole column. */
+.tables-pos .ticket-line {
+  padding: 0.5rem 0.2rem;
+  gap: 0.25rem 0.5rem;
+}
+
+.tables-pos .ticket-line .qty-control button {
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+}
+
+.tables-pos .ticket-line .qty-control input {
+  width: 42px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  text-align: center;
+}
+
+.tables-pos .ticket-line > .icon-btn.danger {
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+}
+
+.tables-pos .order-note-row input {
+  min-height: 36px;
+  padding-block: 0.4rem;
+}
+
+/* A phone has no room for four labelled steps — the words broke one letter per line.
+   The current step keeps its name; the others are their numbered dots. */
+@media (max-width: 640px) {
+  .fjourney__steps {
+    flex-basis: 100%;
+  }
+
+  .fjourney__step:not(.is-now) .fjourney__text {
+    display: none;
+  }
+
+  .fjourney__step.is-now {
+    flex: 2.2;
+  }
+
+  .fjourney__text strong,
+  .fjourney__text small {
+    white-space: nowrap;
+  }
+
+  .fjourney__next {
+    flex: 1 1 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+
+  .fjourney__next .btn {
+    flex-shrink: 0;
+  }
+}
+
+@media (min-width: 1101px) and (min-height: 600px) {
+  .tables-pos {
+    gap: 1rem;
+  }
+
+  .tables-pos .pos-main {
+    position: sticky;
+    top: calc(var(--topbar-h) + 1.25rem);
+  }
+
+  .tables-pos .pos-main > .panel {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - var(--topbar-h) - 2.5rem);
+    /* The panel itself never scrolls; only the dish grid inside it does. */
+    overflow: hidden;
+  }
+
+  .tables-pos .pos-main > .panel > .menu-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 -0.4rem;
+    padding: 0.2rem 0.4rem 0.4rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    align-content: start;
+  }
+
+  .tables-pos .pos-main > .panel > :not(.menu-grid) {
+    flex-shrink: 0;
+  }
 }
 
 /* ---------- The table's menu grid ---------- */
@@ -50459,6 +50700,309 @@ dialog.payment-verify-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 
 /* Completed bill: actions stay next to its identity; QR never stretches the card. */
 .receipt-result { min-width: 0; height: auto; }
+
+/* ---------- A table's bill, just paid (tables/SettledBills.js) ---------- */
+.settled-bill {
+  padding: 1.1rem 1.2rem 1.2rem;
+}
+
+.settled-bill__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settled-bill__title {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-lg, 1.15rem);
+  line-height: 1.25;
+}
+
+.settled-bill__tick {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  color: var(--success);
+}
+
+.settled-bill__title > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settled-bill__title small {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.settled-bill__close {
+  flex-shrink: 0;
+}
+
+.settled-bill__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.95rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.settled-bill__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  /* `.btn-primary` is full-width for forms; here it is one button in a row. */
+  width: auto;
+  min-height: 36px;
+}
+
+.settled-bill__printer {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.settled-bill__qty {
+  margin-left: 0.45rem;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.settled-bill .receipt-result-items td {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.settled-bill__sums {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.6rem;
+}
+
+.settled-bill__sums:empty {
+  display: none;
+}
+
+.settled-bill__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.settled-bill__line.is-good {
+  color: var(--text-success, var(--success));
+}
+
+.settled-bill__total {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+  font-weight: 700;
+}
+
+.settled-bill__total strong {
+  margin-left: auto;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.settled-bill__mode {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.settled-bill__qr-hint {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.settled-bill__noqr {
+  flex: 0 0 212px;
+  margin: 0;
+}
+
+.settled-bill .bill-capture {
+  margin-top: 0.9rem;
+}
+
+/* Phone first in the capture row, and never squeezed to its flag. */
+.settled-bill .bill-capture-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+.settled-bill .bill-capture-fields > * {
+  min-width: 0;
+}
+
+/* Several bills from one table, one row each. */
+.split-bills {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.split-bills__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.split-bills__who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.split-bills__who strong {
+  overflow-wrap: anywhere;
+}
+
+.split-bills__who em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.split-bills__who small {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.split-bills__amount {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-bills__actions {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .settled-bill {
+    padding: 0.95rem;
+  }
+
+  .settled-bill__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settled-bill__actions .btn {
+    justify-content: center;
+    width: 100%;
+    padding-inline: 0.5rem;
+  }
+
+  .settled-bill__primary {
+    grid-column: 1 / -1;
+  }
+
+  .settled-bill__printer {
+    align-self: center;
+    justify-self: start;
+    margin-left: 0;
+  }
+
+  /* The customer scans it — so on a phone the QR comes before the list. */
+  .settled-bill .receipt-result-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settled-bill__qr {
+    order: -1;
+    align-self: center;
+  }
+
+  .settled-bill .bill-capture-fields {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .settled-bill .bill-capture-fields > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .split-bills__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .split-bills__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
+/* The print button says what happened: busy while the slip goes, green once it went. */
+.print-btn.is-busy {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+.print-btn.is-done {
+  border-color: color-mix(in srgb, var(--success) 55%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--text-success, var(--success));
+  animation: print-done-pop 0.28s ease-out;
+}
+
+.print-btn.is-done:hover {
+  background: color-mix(in srgb, var(--success) 18%, var(--surface));
+}
+
+@keyframes print-done-pop {
+  0% { transform: scale(0.94); }
+  60% { transform: scale(1.04); }
+  100% { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .print-btn.is-done {
+    animation: none;
+  }
+}
 .receipt-result-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
 .receipt-result-header h2 { margin: 0; }
 .receipt-result-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
@@ -56159,6 +56703,421 @@ a.stat-card:active,
   color: var(--text-muted);
 }
 
+/* The mic sits inside the pill, round like the clear button beside it. */
+.menu-search .voice-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+
+/* Open suggestions: the box's bottom corners meet the list under it. */
+.menu-search.is-open {
+  border-color: var(--brand);
+}
+
+/* ---------- Search suggestions (portalled to <body>, see tables/MenuSearch.js) ---------- */
+.msuggest {
+  position: fixed;
+  z-index: 998;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--bg-elevated, var(--surface));
+  box-shadow: var(--shadow-lg);
+  animation: msuggest-in 0.12s ease-out;
+}
+
+@keyframes msuggest-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.msuggest__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0.35rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.msuggest__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem 0.15rem;
+}
+
+.msuggest__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  color: var(--brand-text, var(--brand));
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.msuggest__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.55rem 0.3rem;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.msuggest__head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.msuggest__head .link-btn {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.msuggest__dish,
+.msuggest__cat {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 48px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.msuggest__dish.is-active,
+.msuggest__cat.is-active {
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+}
+
+.msuggest__dish.is-expired {
+  opacity: 0.6;
+}
+
+.msuggest__thumb {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.msuggest__thumb--none {
+  display: grid;
+  place-items: center;
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.msuggest__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.msuggest__name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msuggest__name mark {
+  background: none;
+  color: var(--brand-text, var(--brand));
+  font-weight: 800;
+}
+
+.msuggest__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.msuggest__ontable {
+  color: var(--text-success, var(--success));
+  font-weight: 700;
+}
+
+.msuggest__warn {
+  color: var(--text-danger);
+  font-weight: 700;
+}
+
+.msuggest__price {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.msuggest__add {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand, #fff);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+}
+
+.msuggest__cat {
+  min-height: 40px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+.msuggest__cat > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.msuggest__cat > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msuggest__count {
+  flex-shrink: 0;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.msuggest__note,
+.msuggest__empty {
+  padding: 0.55rem 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.msuggest__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--text);
+}
+
+.msuggest__empty small,
+.msuggest__more,
+.msuggest__keys {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.msuggest__more {
+  margin: 0;
+  padding: 0.45rem 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.msuggest__keys {
+  margin: 0;
+  padding: 0.4rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-strong);
+}
+
+/* Touch screens have no arrow keys to explain. */
+@media (hover: none) {
+  .msuggest__keys {
+    display: none;
+  }
+}
+
+/* ---------- Category rail: scrolls everywhere, says when there is more ---------- */
+.cat-rail {
+  position: relative;
+  margin-bottom: 0.45rem;
+}
+
+.cat-rail .cat-rail__scroll {
+  /* Positioned, so a pill's offsetLeft is measured from the rail's content — what the
+     bring-into-view maths in CategoryRail assumes. */
+  position: relative;
+  margin-bottom: 0;
+  padding: 0.15rem 0.1rem 0.35rem;
+  cursor: grab;
+  user-select: none;
+}
+
+.cat-rail .cat-rail__scroll:active {
+  cursor: grabbing;
+}
+
+/* The cut-off edge fades out, so "there is more this way" reads before anyone scrolls. */
+.cat-rail.can-right .cat-rail__scroll {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+}
+
+.cat-rail.can-left .cat-rail__scroll {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+}
+
+.cat-rail.can-left.can-right .cat-rail__scroll {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+}
+
+.cat-rail__arrow {
+  position: absolute;
+  top: calc(50% - 0.1rem);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.cat-rail__arrow:hover {
+  border-color: var(--brand);
+  color: var(--brand-text, var(--brand));
+}
+
+.cat-rail__arrow.is-left {
+  left: -2px;
+}
+
+.cat-rail__arrow.is-right {
+  right: -2px;
+}
+
+/* Phones swipe; the arrows would only cover pills there. */
+@media (hover: none) and (pointer: coarse) {
+  .cat-rail__arrow {
+    display: none;
+  }
+}
+
+.cat-rail .filter-pill {
+  min-height: 32px;
+  padding: 0.3rem 0.75rem;
+  font-size: var(--fs-sm);
+}
+
+.filter-pill__count {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 0.72em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.cat-rail .filter-pill.is-empty {
+  opacity: 0.45;
+}
+
+/* ---------- What is showing, and in what order ---------- */
+.menu-results-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+  min-height: 32px;
+}
+
+.menu-results-bar__count {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.menu-results-bar__chip {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  color: var(--brand-text, var(--brand));
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.menu-results-bar__sort {
+  flex: 0 0 auto;
+  width: 190px;
+}
+
+/* `.dropdown-field { width: 100% }` sits later and beats single-class variants. */
+.menu-results-bar__sort .dropdown-field {
+  width: 100%;
+}
+
+.menu-results-bar__sort .dropdown-trigger {
+  min-height: 32px;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 520px) {
+  .menu-results-bar__sort {
+    width: 150px;
+  }
+}
+
+.menu-no-match {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.menu-no-match p {
+  margin: 0;
+}
+
+.menu-no-match small {
+  color: var(--text-muted);
+}
+
 /* ---------- The table drawn large inside its floor tile ---------- */
 .ftile__stage {
   position: relative;
@@ -56635,6 +57594,23 @@ a.stat-card:active,
   }
   .seatpick__side {
     align-items: center;
+  }
+}
+
+/* Inside a table on a phone the chair buttons are the picker — the little drawing above
+   them only took a row of the screen. */
+@media (max-width: 640px) {
+  .seatpick.is-compact {
+    flex-direction: row;
+    text-align: left;
+  }
+
+  .seatpick.is-compact .seatpick__stage {
+    display: none;
+  }
+
+  .seatpick.is-compact .seatpick__side {
+    align-items: flex-start;
   }
 }
 
@@ -57312,4 +58288,114 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+}
+
+/* ---------- Reports: refetching without the page jumping ----------
+ *
+ * The answer on screen stays mounted while the next one loads (see `refreshing` in
+ * seller/reports/page.js). Dimmed and inert, so nobody sorts or pages the old numbers
+ * thinking they are the new ones.
+ */
+.report-body {
+  transition: opacity 0.15s ease;
+}
+
+.report-body.is-refreshing {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Phones: the row cards are already cards. Wrapping them in a bordered, padded panel
+   made a card inside a card and spent ~40px of a 390px screen on two borders and two
+   paddings. The panel steps aside and the cards sit on the page like every other list. */
+@media (max-width: 900px) {
+  .panel.report-panel {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .report-card {
+    box-shadow: var(--shadow-sm, none);
+  }
+}
+
+/* ---------- "Who is sitting where?" inside a table: big enough to read ----------
+ *
+ * The compact drawing was capped at 64px, which put each chair's number at about 6px —
+ * and below 640px it was hidden outright, so on a phone the waiter got numbered buttons
+ * with no picture of which chair is which. Now ~2x on desktop, and kept on phones beside
+ * the chair buttons rather than above them, so the menu still starts near the top.
+ */
+.seatpick.is-compact .seatpick__stage .tview {
+  max-height: 128px;
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .seatpick.is-compact {
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.6rem;
+  }
+
+  .seatpick.is-compact .seatpick__stage {
+    display: grid;
+    max-width: 40%;
+  }
+
+  .seatpick.is-compact .seatpick__stage .tview {
+    max-height: 108px;
+  }
+}
+
+@media (max-width: 640px) {
+  .seatpick.is-compact.is-wide {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .seatpick.is-compact.is-wide .seatpick__stage {
+    max-width: 100%;
+  }
+
+  .seatpick.is-compact.is-wide .seatpick__stage .tview {
+    max-height: 132px;
+  }
+}
+
+/* ---------- "Who is sitting where?": the shop's colours, not a fixed blue ----------
+ *
+ * `.seatpick` hard-coded `--tone: #2563eb`, so the table, its chairs and the panel tint
+ * stayed one fixed blue under every accent theme while the chair buttons beside them wore
+ * the shop's brand — two blues that almost matched on BillVyse and clashed on every other
+ * theme. And the dish count on each chair was `--danger` red: on a counter screen red means
+ * "something is wrong", and three dishes on chair 2 is the opposite of wrong. The badge now
+ * matches the count bubble on the chair buttons.
+ */
+.seatpick {
+  --tone: var(--brand);
+}
+
+.seatpick .tv-count {
+  fill: var(--brand);
+  stroke: var(--surface);
+}
+
+/* On the chair that is already filled with the brand colour, the badge flips to white
+   with navy ink — a surface-coloured badge vanished into the dark theme's surface. */
+.seatpick .tv-chair.is-selected .tv-count {
+  fill: #fff;
+  stroke: var(--brand);
+}
+
+.seatpick .tv-chair.is-selected .tv-count-text {
+  fill: var(--brand-ink, #0f2a4d);
+}
+
+/* The white highlight across the table top is a gloss on a light surface; on the dark
+   theme the same 35% white read as a grey slab lying on the table. */
+:root:not([data-theme='light']) .seatpick .tv-shine {
+  opacity: 0.08;
 }

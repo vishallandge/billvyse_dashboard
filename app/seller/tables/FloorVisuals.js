@@ -889,18 +889,23 @@ export function FloorMap({ entries, onOpen, stageFilter, t, lang, editable = fal
  * the table") to go back to dishes everyone shares. Choosing a chair is never required: a
  * dhaba that just wants the order in taps dishes and never looks at this.
  */
-export function SeatPicker({ table, selectedSeats = [], seatCounts, onToggle, onClear, t, seatClasses, lockedSeats }) {
+export function SeatPicker({ table, selectedSeats = [], seatCounts, onToggle, onClear, t, seatClasses, lockedSeats, compact = false }) {
   const picked = selectedSeats.slice().sort((a, b) => a - b);
+  // A long table or a big round one is drawn wide; beside the chair buttons on a phone it
+  // shrank to an unreadable strip, so it takes its own row there instead (CSS).
+  const wide = table.shape === 'long' || (Number(table.capacity) || 0) > 6;
   const now = picked.length === 0
     ? t('tables.seat.none')
     : picked.length === 1
       ? t('tables.seat.forSeat', { seat: picked[0] })
       : t('tables.seat.forSeats', { seats: picked.join(' + ') });
   return (
-    <div className={`seatpick${picked.length ? ' has-seat' : ''}${picked.length > 1 ? ' has-many' : ''}`}>
+    <div className={`seatpick${compact ? ' is-compact' : ''}${wide ? ' is-wide' : ''}${picked.length ? ' has-seat' : ''}${picked.length > 1 ? ' has-many' : ''}`}>
       <div className="seatpick__stage">
         <TableSeats
           large
+          // Drawn at full size in both modes; compact caps it in CSS instead. At scale 1 the
+          // chair numbers came out ~6px tall — a picture of chairs nobody could read.
           scale={1.7}
           capacity={table.capacity}
           shape={table.shape}
@@ -916,6 +921,44 @@ export function SeatPicker({ table, selectedSeats = [], seatCounts, onToggle, on
           }}
         />
       </div>
+      {compact ? (
+        // Inside a table: the chairs as a row of big buttons — the small drawing beside
+        // them shows where each sits, the buttons are what a thumb actually hits.
+        <div className="seatpick__side">
+          <strong>{t('tables.seat.title')}</strong>
+          <div className="seatpick__chips" role="group" aria-label={t('tables.seat.title')}>
+            <button
+              type="button"
+              className={`seatpick__chip is-table${picked.length === 0 ? ' is-on' : ''}`}
+              aria-pressed={picked.length === 0}
+              onClick={onClear}
+            >
+              {t('tables.seat.forTable')}
+            </button>
+            {Array.from({ length: Math.max(0, Number(table.capacity) || 0) }, (_, i) => i + 1).map((seat) => {
+              const on = picked.includes(seat);
+              const locked = (lockedSeats || []).includes(seat);
+              const count = seatCounts?.[seat] || 0;
+              return (
+                <button
+                  key={seat}
+                  type="button"
+                  className={`seatpick__chip${on ? ' is-on' : ''}`}
+                  aria-pressed={on}
+                  disabled={locked}
+                  data-tip={locked ? t('tables.seat.chairTaken', { seat }) : t('tables.seat.chairLabel', { seat, count })}
+                  aria-label={locked ? t('tables.seat.chairTaken', { seat }) : t('tables.seat.chairLabel', { seat, count })}
+                  onClick={() => onToggle(seat)}
+                >
+                  {seat}
+                  {count > 0 && <em>{count}</em>}
+                </button>
+              );
+            })}
+          </div>
+          {picked.length > 0 && <span className="seatpick__now">{now}</span>}
+        </div>
+      ) : (
       <div className="seatpick__side">
         <strong>{t('tables.seat.title')}</strong>
         <span className="seatpick__now">{now}</span>
@@ -927,6 +970,7 @@ export function SeatPicker({ table, selectedSeats = [], seatCounts, onToggle, on
           <small>{t('tables.seat.hint')}</small>
         )}
       </div>
+      )}
     </div>
   );
 }

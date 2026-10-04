@@ -50,6 +50,7 @@ import Modal from '../../components/Modal';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { recordHref } from '../../../lib/routeId';
 import { formatQty } from '../../../lib/format';
+import { customerOptionLabel, nameIsPhone } from '../../../lib/customerLabel';
 
 const COUNTER_KEY = 'dukaan_counter_name';
 // The counter's own shortlist of what it sells all day. Kept on the device rather than the
@@ -4926,7 +4927,7 @@ export default function SellerBillingPage() {
                           { value: '', label: t('seller.noKhataCustomer') },
                           ...customers.map((c) => ({
                             value: c.id,
-                            label: `${c.name} (${c.phone})${loyaltyEnabled ? ` · ${c.loyaltyPoints || 0} pts` : ''}`,
+                            label: `${customerOptionLabel(c)}${loyaltyEnabled ? ` · ${c.loyaltyPoints || 0} pts` : ''}`,
                           })),
                         ]}
                       />
@@ -4950,8 +4951,9 @@ export default function SellerBillingPage() {
                     {selectedCustomer && (
                       <div className="picked-customer">
                         <span className="picked-customer__who">
-                          <strong>{selectedCustomer.name}</strong>
-                          <span className="picked-customer__phone">{selectedCustomer.phone}</span>
+                          <strong>{nameIsPhone(selectedCustomer) ? selectedCustomer.phone : selectedCustomer.name}</strong>
+                          {/* A customer saved from just a number has that number as their name too. */}
+                          {!nameIsPhone(selectedCustomer) && <span className="picked-customer__phone">{selectedCustomer.phone}</span>}
                         </span>
                         <button
                           type="button"

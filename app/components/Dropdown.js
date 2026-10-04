@@ -44,6 +44,7 @@ export default function Dropdown({
   const listRef = useRef(null);
 
   useEffect(() => setMounted(true), []);
+  const touchFirst = mounted && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
   /* On a phone an open option list covers the screen, so back reads as "close this list",
      not "leave the page". Without it, choosing a unit and changing your mind shuts the
@@ -111,6 +112,9 @@ export default function Dropdown({
       // this check, scrolling to reach an option instantly closed the list on the first
       // pixel of movement — the list could never actually be scrolled through.
       if (listRef.current && listRef.current.contains(event.target)) return;
+      // Typing in the search box: a phone browser scrolls the page to lift the focused box
+      // above its keyboard, and that scroll is the browser's, not the person's.
+      if (listRef.current && listRef.current.contains(document.activeElement)) return;
       setOpen(false);
     }
     function onKeyDown(event) {
@@ -119,8 +123,13 @@ export default function Dropdown({
     // The list is position:fixed at coordinates measured once, when it opened — rotating a
     // phone or resizing a browser window leaves it floating away from its trigger. Closing
     // is the honest response: the next tap re-measures against the new viewport.
+    //
+    // WIDTH only. On Android the on-screen keyboard opening is a height-only resize, and
+    // closing on that made a searchable list flash open and shut the instant the search
+    // box was tapped — the list could never be typed into on a phone.
+    const openWidth = window.innerWidth;
     function onResize() {
-      setOpen(false);
+      if (window.innerWidth !== openWidth) setOpen(false);
     }
     document.addEventListener('mousedown', onDown);
     window.addEventListener('scroll', onScroll, true);
@@ -170,7 +179,10 @@ export default function Dropdown({
           <input
             type="text"
             value={search}
-            autoFocus
+            // A mouse gets the box focused; a finger does not. Focusing on touch throws the
+            // keyboard over half the screen before the person has even seen the list —
+            // most of the time they wanted to tap an option, not type.
+            autoFocus={!touchFirst}
             placeholder={searchPlaceholder}
             onChange={(e) => setSearch(e.target.value)}
             // Enter picks the only thing left, which is what typing three letters of a

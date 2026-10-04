@@ -24,6 +24,7 @@ import CustomerQuickAdd from '../../components/CustomerQuickAdd';
 import Modal from '../../components/Modal';
 import { recordHref } from '../../../lib/routeId';
 import DeliveryRun, { mapHref, slotOf } from './DeliveryRun';
+import { customerOptionLabel } from '../../../lib/customerLabel';
 
 const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
 
@@ -1244,7 +1245,7 @@ export default function OrdersPage() {
                 <Dropdown
                   value={standingForm.customerId}
                   onChange={(v) => setStandingForm((f) => ({ ...f, customerId: v }))}
-                  options={[{ value: '', label: t('memberships.pickCustomer') }, ...customers.map((c) => ({ value: c.id, label: `${c.name} (${c.phone})` }))]}
+                  options={[{ value: '', label: t('memberships.pickCustomer') }, ...customers.map((c) => ({ value: c.id, label: customerOptionLabel(c) }))]}
                 />
                 <button
                   type="button"

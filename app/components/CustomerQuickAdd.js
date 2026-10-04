@@ -89,6 +89,35 @@ export default function CustomerQuickAdd({ prefill = null, onClose, onCreated })
     }
   }
 
+  // A closed khata still owns its number, but every bill refuses it ("Customer not found"),
+  // so "Yes, it is them" would only move the failure to the next button. Say what is wrong
+  // and where it is fixed instead.
+  if (duplicate && duplicate.isActive === false) {
+    return (
+      <Modal
+        onClose={onClose}
+        title={t('customerAdd.closedTitle')}
+        hint={t('customerAdd.closedHint', { name: duplicate.name, phone: duplicate.phone || form.phone })}
+        maxWidth={480}
+        footer={
+          <>
+            <button type="button" className="btn btn-primary btn-inline" onClick={() => setDuplicate(null)}>
+              {t('customerAdd.changeNumber')}
+            </button>
+            <button type="button" className="btn btn-secondary btn-inline" onClick={onClose}>
+              {t('common.cancel')}
+            </button>
+          </>
+        }
+      >
+        <div className="quick-add-dupe">
+          <strong>{duplicate.name}</strong>
+          <span className="cell-sub">{duplicate.phone || form.phone}</span>
+        </div>
+      </Modal>
+    );
+  }
+
   if (duplicate) {
     return (
       <Modal

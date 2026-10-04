@@ -47,6 +47,7 @@ import RowMenu from '../../components/RowMenu';
 import WhatsappSheet from '../../components/WhatsappSheet';
 import { messageFromWaLink } from '../../../lib/whatsappSend';
 import { recordHref } from '../../../lib/routeId';
+import { customerOptionLabel } from '../../../lib/customerLabel';
 
 // Mirrors the enum in backend/models/Appointment.js.
 const STATUSES = ['booked', 'confirmed', 'arrived', 'done', 'cancelled', 'no_show'];
@@ -1636,7 +1637,7 @@ export default function AppointmentsPage() {
                   searchPlaceholder={t('appointments.searchCustomer')}
                   options={[
                     { value: '', label: t('appointments.walkIn') },
-                    ...customers.map((c) => ({ value: c.id, label: `${c.name} (${c.phone})` })),
+                    ...customers.map((c) => ({ value: c.id, label: customerOptionLabel(c) })),
                   ]}
                 />
               </div>

@@ -19,6 +19,7 @@ import {
 import RowMenu from '../../components/RowMenu';
 import CustomerQuickAdd from '../../components/CustomerQuickAdd';
 import { recordHref } from '../../../lib/routeId';
+import { customerOptionLabel } from '../../../lib/customerLabel';
 
 const PAYMENT_MODES = ['cash', 'upi', 'card', 'khata'];
 
@@ -595,7 +596,7 @@ export default function MembershipsPage() {
                       value={form.customerId}
                       onChange={(value) => setForm((f) => ({ ...f, customerId: value }))}
                       placeholder={t('memberships.pickCustomer')}
-                      options={customers.map((c) => ({ value: c.id, label: `${c.name} (${c.phone})` }))}
+                      options={customers.map((c) => ({ value: c.id, label: customerOptionLabel(c) }))}
                     />
                   )}
                   {/* The plan, not the shop, is what's empty here — say which, and where the

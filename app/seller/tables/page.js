@@ -34,6 +34,14 @@ import Modal from '../../components/Modal';
 import ThermalReceipt from '../../components/ThermalReceipt';
 import KotTicket from '../../components/KotTicket';
 import ModifierPicker from '../../components/ModifierPicker';
+import CustomerQuickAdd from '../../components/CustomerQuickAdd';
+import { MenuSearchBox, CategoryRail } from './MenuSearch';
+import { SettledBill, SplitSettledBills } from './SettledBills';
+import RowMenu from '../../components/RowMenu';
+import { searchMenu, MENU_SORTS } from '../../../lib/menuSearch';
+import { customerLine, customerOptionLabel } from '../../../lib/customerLabel';
+import WhatsappSheet from '../../components/WhatsappSheet';
+import { freshFetch } from '../../../lib/freshFetch';
 import ManageTables from './ManageTables';
 import { FloorTableCard, FloorMap, SeatPicker, FloorLegend, ActionStrip, HowItWorks, TableJourney, TableSeats, GroupPicker, groupLetter, legendKey, seatClassesFor } from './FloorVisuals';
 import { tableStage, tablesNeedingAction, mostUrgentStage, seatsAtTable } from '../../../lib/tableStage';
@@ -64,6 +72,8 @@ import {
   InfoIcon,
   XIcon,
   GridIcon,
+  WhatsappIcon,
+  CheckCircleIcon,
 } from '../../components/Icons';
 import { formatRupees } from '../../../lib/format';
 
@@ -82,6 +92,9 @@ import { formatRupees } from '../../../lib/format';
 
 const TAKEAWAY_TYPES = ['parcel', 'delivery'];
 const SPLIT_MODES = ['cash', 'upi', 'card'];
+// Per-device count of how often each dish is added, for "Most added" and the empty search.
+const MENU_TALLY_KEY = 'bv:menuTally';
+const MENU_TALLY_MAX = 200;
 
 function lineTotal(item) {
   return item.price * item.quantity;
@@ -165,6 +178,14 @@ export default function TablesPage() {
 
   const [menuQuery, setMenuQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  // How the menu is ordered: best match, most added on this device, price, A–Z.
+  const [menuSort, setMenuSort] = useState('relevance');
+  // How often each dish is added from this device — what "Most added" and the empty-search
+  // suggestions are made of. Per device, like billing's quick picks: it is this counter's
+  // habit, read without a server round-trip.
+  const [menuTally, setMenuTally] = useState({});
+  // The count typed with a dish ("2 naan") waits here while its modifiers are picked.
+  const pendingQtyRef = useRef(1);
   const [modifierPickFor, setModifierPickFor] = useState(null); // product | null
   // "no onion", "less spicy" — the model, the API and the printed KOT have always carried
   // an item note; until now there was no way for a waiter to actually type one.
@@ -294,7 +315,17 @@ export default function TablesPage() {
   const [split, setSplit] = useState({ cash: '', upi: '', card: '' });
   const [billDiscountPercent, setBillDiscountPercent] = useState('');
   const [billDiscountAmount, setBillDiscountAmount] = useState('');
+  // { bill, upiLink, customer: {id,name,phone}|null } — the customer is kept beside the bill
+  // because the bill comes back with only the customer's id.
   const [settledReceipt, setSettledReceipt] = useState(null);
+  // Adding a customer without leaving the bill: null, or { target: 'settle' | guest index }.
+  const [customerAddFor, setCustomerAddFor] = useState(null);
+  // The bill the hidden thermal slip is drawn for — whichever one was last sent to print,
+  // so printing one split bill never replaces the settled panel on screen.
+  const [slip, setSlip] = useState(null);
+  const [waSheet, setWaSheet] = useState(null);
+  // Whatever the super admin switched off is not offered here either.
+  const [whatsappOn, setWhatsappOn] = useState(true);
   const [kotToPrint, setKotToPrint] = useState(null);
   // Whether firing a round also prints its slip. Per device, not per shop: it is the
   // phone or counter PC with a printer beside it that wants the slip, while the owner's
@@ -345,7 +376,51 @@ export default function TablesPage() {
     apiFetch('/api/seller/products').then((d) => setProducts(d.products || [])).catch(() => {});
     apiFetch('/api/seller/staff/list').then((d) => setStaffList(d.staff || [])).catch(() => {});
     apiFetch('/api/seller/khata/customers').then((d) => setCustomers(d.customers || [])).catch(() => {});
+    // Same cached copy the sidebar reads — see lib/freshFetch.js.
+    freshFetch('/api/seller/modules', { ttl: 60000 })
+      .then((result) => setWhatsappOn(result.modules?.whatsapp !== false))
+      .catch(() => {});
   }, []);
+
+  // A closed khata is still in the list the API returns, but every bill refuses it — so it
+  // is never offered as something to bill to.
+  const billableCustomers = useMemo(() => customers.filter((c) => c.isActive !== false), [customers]);
+  const customerOptions = useMemo(
+    () => billableCustomers.map((c) => ({ value: c.id, label: customerOptionLabel(c) })),
+    [billableCustomers],
+  );
+
+  // The khata customer on a typed phone number, matched on its last ten digits the way the
+  // server matches it ("+91 98765 43210" and "9876543210" are one person).
+  function customerForPhone(phone) {
+    const key = String(phone || '').replace(/\D/g, '').slice(-10);
+    if (key.length < 10) return null;
+    return billableCustomers.find((c) => String(c.phone || '').replace(/\D/g, '').slice(-10) === key) || null;
+  }
+
+  function customerById(id) {
+    return id ? customers.find((c) => c.id === id) || null : null;
+  }
+
+  // A customer just added (or found already on that number) from inside a bill: into the
+  // list, and onto the bill that asked for them.
+  function handleCustomerAdded(customer) {
+    if (!customer?.id) return;
+    setCustomers((list) => (list.some((c) => c.id === customer.id) ? list : [customer, ...list]));
+    if (customerAddFor?.target === 'settle') setSettleCustomerId(customer.id);
+    else if (Number.isInteger(customerAddFor?.target)) {
+      setGuestCustomers((map) => ({ ...map, [customerAddFor.target]: customer.id }));
+    }
+  }
+
+  // What the quick-add form opens with: the name and number the party was seated under, so
+  // the waiter is not asked to type them twice. Only for the whole table's bill — a split
+  // bill is one person out of that party, and handing them the host's number would put
+  // the friend's bill on the host's khata.
+  function customerPrefill(target) {
+    if (target !== 'settle') return null;
+    return { name: active?.customerName || '', phone: active?.customerPhone || '' };
+  }
 
   // The clock a table's occupancy timer runs on — cheap to tick, and the only thing that
   // needs to force a re-render with nothing having actually changed on the server.
@@ -403,6 +478,15 @@ export default function TablesPage() {
     setJoinPick([]);
     setGuestSplitOpen(false);
     setSeatPicks([]);
+    // How the last table paid, its discount and its customer are that table's — carried
+    // over, T2 would settle on T1's khata customer or with T1's 10% off.
+    setSettleMode('cash');
+    setSplit({ cash: '', upi: '', card: '' });
+    setBillDiscountPercent('');
+    setBillDiscountAmount('');
+    // The party was seated under a phone number: if that number is already in the khata,
+    // the bill starts on them, so "send the bill" has someone to go to without a search.
+    setSettleCustomerId(customerForPhone(order?.customerPhone)?.id || '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
   const takeawayOrders = useMemo(() => orders.filter((o) => o.orderType !== 'dine_in'), [orders]);
@@ -480,7 +564,9 @@ export default function TablesPage() {
   }, [floorTables, orderByTableId, floorModal, activeZone]);
 
   const categories = useMemo(
-    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort(),
+    // Only categories with a live dish — an archived menu's category would sit on the rail
+    // as an empty pill.
+    () => Array.from(new Set(products.filter((p) => p.status !== 'archived').map((p) => p.category).filter(Boolean))).sort(),
     [products]
   );
 
@@ -652,19 +738,48 @@ export default function TablesPage() {
     return map;
   }, [active]);
 
-  const menu = useMemo(() => {
-    const q = menuQuery.trim().toLowerCase();
-    let list = products.filter((p) => p.status !== 'archived');
-    if (categoryFilter) list = list.filter((p) => p.category === categoryFilter);
-    // By name first, then by the dish's category or code — a waiter who types "tandoor"
-    // or a short code the kitchen uses gets the dishes, not "nothing found".
-    if (q) {
-      const byName = list.filter((p) => p.name.toLowerCase().includes(q));
-      const byOther = list.filter((p) => !p.name.toLowerCase().includes(q) && [p.category, p.sku, p.barcode].some((v) => v && String(v).toLowerCase().includes(q)));
-      list = [...byName, ...byOther];
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(MENU_TALLY_KEY) || '{}');
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) setMenuTally(raw);
+    } catch {
+      // Storage blocked: "Most added" just starts empty.
     }
-    return list.slice(0, 60);
-  }, [products, menuQuery, categoryFilter]);
+  }, []);
+
+  function bumpMenuTally(productId, quantity) {
+    setMenuTally((cur) => {
+      const next = { ...cur, [productId]: (Number(cur[productId]) || 0) + Math.max(1, Math.round(quantity) || 1) };
+      // Kept to the dishes that matter, so an old menu does not grow this forever.
+      const trimmed = Object.fromEntries(Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, MENU_TALLY_MAX));
+      try {
+        localStorage.setItem(MENU_TALLY_KEY, JSON.stringify(trimmed));
+      } catch {
+        // Not remembered on this device; nothing else depends on it.
+      }
+      return trimmed;
+    });
+  }
+
+  // Ranked, typo-forgiving search — see lib/menuSearch.js.
+  const menuSearch = useMemo(
+    () => searchMenu(products, menuQuery, { category: categoryFilter, sort: menuSort, tally: menuTally, limit: 120 }),
+    [products, menuQuery, categoryFilter, menuSort, menuTally]
+  );
+  const menu = useMemo(() => menuSearch.results.map((r) => r.product), [menuSearch]);
+  const menuSearching = menuQuery.trim() !== '';
+
+  // Dishes per category for the rail: while searching, how many matches each holds.
+  const categoryCounts = useMemo(() => {
+    if (menuSearching) return menuSearch.facets;
+    const map = new Map();
+    for (const p of products) {
+      if (p.status === 'archived' || !p.category) continue;
+      map.set(p.category, (map.get(p.category) || 0) + 1);
+    }
+    return map;
+  }, [menuSearching, menuSearch, products]);
+
 
   const transferableTables = useMemo(
     () => floorTables.filter((tb) => tb.isActive && !orderByTableId.has(String(tb._id)) && String(tb._id) !== String(active?.table)),
@@ -862,15 +977,19 @@ export default function TablesPage() {
     }
   }
 
-  async function addItem(product, modifiers) {
+  async function addItem(product, modifiers, quantity = 1) {
     if (!active) return;
     if (blockExpiredProduct(product)) return;
+    // Whole plates, 1–99 — the search box is the only place a count is typed.
+    const qty = Math.min(99, Math.max(1, Math.round(Number(quantity)) || 1));
     try {
       const data = await apiFetch(`/api/seller/table-orders/${active._id}/items`, {
         method: 'POST',
-        body: JSON.stringify({ items: [{ productId: product._id, quantity: 1, modifiers, ...seatingPayload() }] }),
+        body: JSON.stringify({ items: [{ productId: product._id, quantity: qty, modifiers, ...seatingPayload() }] }),
       });
       setOrders((list) => list.map((o) => (o._id === data.order._id ? data.order : o)));
+      bumpMenuTally(String(product._id), qty);
+      if (qty > 1) toast.success(t('tables.msearch.addedQty', { qty, name: product.name }));
     } catch (err) {
       if (!markExpiredError(err)) toast.error(tableErrorText(err, t));
     }
@@ -919,13 +1038,14 @@ export default function TablesPage() {
     return null;
   }
 
-  function handleAddItem(product) {
+  function handleAddItem(product, quantity = 1) {
     if (blockExpiredProduct(product)) return;
     if (product.modifierGroups?.length > 0) {
+      pendingQtyRef.current = quantity;
       setModifierPickFor(product);
       return;
     }
-    addItem(product);
+    addItem(product, undefined, quantity);
   }
 
   function openNoteEditor(item) {
@@ -1107,18 +1227,6 @@ export default function TablesPage() {
     });
   }
 
-  function handlePrintReceipt() {
-    printSlip({
-      shop: user,
-      role: 'receipt',
-      selector: '.thermal-receipt',
-      bodyClass: 'printing-receipt',
-      ready: qrSlotsReady,
-      onFallback: (message) => toast.info(message),
-      t,
-    });
-  }
-
   // "Food is on the table" — every dish the kitchen marked ready, in one tap from the
   // waiter's own screen, so the table moves on to its bill without a trip to the KDS.
   async function handleServeReady() {
@@ -1241,9 +1349,32 @@ export default function TablesPage() {
     return (groupNames[index] || '').trim() || `${t('tables.bill')} ${index + 1}`;
   }
 
+  // A typed discount the server would refuse anyway, caught before any bill is made.
+  // `total` is the pre-discount bill the ₹ figure is taken off.
+  function discountInvalid() {
+    const pctText = String(billDiscountPercent).trim();
+    const amtText = String(billDiscountAmount).trim();
+    const pct = Number(pctText);
+    const amt = Number(amtText);
+    if (pctText && (!Number.isFinite(pct) || pct < 0 || pct > 100)) return true;
+    if (amtText && (!Number.isFinite(amt) || amt < 0 || amt > total + 0.001)) return true;
+    return false;
+  }
+
   async function handleSettle() {
     if (!active || active.items.length === 0) return;
+    if (discountInvalid()) {
+      toast.error(t('tables.discountInvalid'));
+      return;
+    }
     if (settleMode === 'khata' && !settleCustomerId) {
+      toast.error(t('tables.khataCustomerHint'));
+      return;
+    }
+    // Picked earlier, then closed or merged away on another screen: the server would refuse
+    // the bill with a bare "Customer not found". Ask again instead.
+    if (settleCustomerId && !billableCustomers.some((c) => c.id === settleCustomerId)) {
+      setSettleCustomerId('');
       toast.error(t('seller.selectCustomer'));
       return;
     }
@@ -1263,7 +1394,9 @@ export default function TablesPage() {
           // Bills a parcel/delivery on its own price list — see backend/utils/orderPricing.js.
           orderType: active.orderType,
           counter: active.tableLabel || active.tableName,
-          customerId: settleMode === 'khata' ? settleCustomerId : undefined,
+          // On any mode, not only khata: a UPI or cash bill with a customer on it can be
+          // sent to them, and shows up in their history.
+          customerId: settleCustomerId || undefined,
           payments: settleMode === 'split' ? splitLines() : undefined,
           billDiscountPercent: Number(billDiscountPercent) || undefined,
           billDiscount: !Number(billDiscountPercent) && Number(billDiscountAmount) ? Number(billDiscountAmount) : undefined,
@@ -1274,10 +1407,8 @@ export default function TablesPage() {
         body: JSON.stringify({ billId: billData.bill._id }),
       });
       toast.success(t('tables.settled', { table: active.tableLabel || active.tableName, number: billData.bill.billNumber }));
-      setSettledReceipt({ bill: billData.bill, upiLink: null });
-      apiFetch(`/api/seller/bills/${billData.bill._id}/receipt-text`)
-        .then((r) => setSettledReceipt((cur) => (cur ? { ...cur, upiLink: r.upiLink || null } : cur)))
-        .catch(() => {});
+      setSplitSettledReceipts([]);
+      showSettled({ bill: billData.bill, customer: customerById(settleCustomerId) });
       setActiveId(null);
       setSettleMode('cash');
       setSettleCustomerId('');
@@ -1434,6 +1565,12 @@ export default function TablesPage() {
     return (guestModes[g.index] || 'cash') === 'khata' && !guestCustomers[g.index];
   }
 
+  // A customer picked on a split bill who has since been closed or merged on another screen.
+  function groupCustomerGone(g) {
+    const id = guestCustomers[g.index];
+    return Boolean(id) && !billableCustomers.some((c) => c.id === id);
+  }
+
   function createGroupBill(g, kind, { withTakeaway = g.takeaway > 0 } = {}) {
     const mode = guestModes[g.index] || 'cash';
     return apiFetch('/api/seller/bills', {
@@ -1444,7 +1581,7 @@ export default function TablesPage() {
         paymentMode: mode,
         orderType: active.orderType,
         counter: `${active.tableLabel || active.tableName} · ${groupLabel(g.index)}`,
-        customerId: mode === 'khata' ? guestCustomers[g.index] : undefined,
+        customerId: guestCustomers[g.index] || undefined,
         billDiscountPercent: Number(billDiscountPercent) || undefined,
       }),
     });
@@ -1452,6 +1589,10 @@ export default function TablesPage() {
 
   async function handleGuestSplitSettle() {
     if (!active) return;
+    if (discountInvalid()) {
+      toast.error(t('tables.discountInvalid'));
+      return;
+    }
     const problem = splitProblem();
     if (problem) {
       toast.error(problem);
@@ -1467,22 +1608,36 @@ export default function TablesPage() {
       toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(missing.index) }));
       return;
     }
+    const gone = nonEmptyGroups.find(groupCustomerGone);
+    if (gone) {
+      setGuestCustomers((map) => ({ ...map, [gone.index]: '' }));
+      toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(gone.index) }));
+      return;
+    }
     setBusy('settle');
     try {
       // Sequential, not Promise.all — each POST is a real bill (stock moves, an invoice
       // number is spent), and firing eight of those at once against the same shop's
       // counters is asking for exactly the race the billNumber sequence exists to avoid.
       const createdBills = [];
+      const billCustomers = [];
       for (const g of nonEmptyGroups) {
         const billData = await createGroupBill(g, 'split');
         createdBills.push(billData.bill);
+        billCustomers.push(customerById(guestCustomers[g.index]));
       }
       await apiFetch(`/api/seller/table-orders/${active._id}/settle`, {
         method: 'POST',
         body: JSON.stringify({ billIds: createdBills.map((b) => b._id) }),
       });
       toast.success(t('tables.splitSettled', { table: active.tableLabel || active.tableName, count: createdBills.length }));
-      setSplitSettledReceipts(createdBills.map((bill) => ({ bill, upiLink: null })));
+      setSettledReceipt(null);
+      setSplitSettledReceipts(createdBills.map((bill, i) => ({ bill, customer: billCustomers[i] })));
+      createdBills.forEach((bill) => {
+        receiptExtras(bill._id).then((extras) => {
+          setSplitSettledReceipts((list) => list.map((e) => (e.bill._id === bill._id ? { ...e, ...extras } : e)));
+        });
+      });
       setActiveId(null);
       setGuestSplitOpen(false);
       setBillDiscountPercent('');
@@ -1507,12 +1662,21 @@ export default function TablesPage() {
    */
   async function handlePartSettle(g) {
     if (!active || g.lines.length === 0) return;
+    if (discountInvalid()) {
+      toast.error(t('tables.discountInvalid'));
+      return;
+    }
     const problem = splitProblem();
     if (problem) {
       toast.error(problem);
       return;
     }
     if (groupNeedsCustomer(g)) {
+      toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(g.index) }));
+      return;
+    }
+    if (groupCustomerGone(g)) {
+      setGuestCustomers((map) => ({ ...map, [g.index]: '' }));
       toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(g.index) }));
       return;
     }
@@ -1536,7 +1700,8 @@ export default function TablesPage() {
         }),
       });
       const amount = billData.bill.payableTotal ?? billData.bill.total;
-      setSettledReceipt({ bill: billData.bill, upiLink: null });
+      setSplitSettledReceipts([]);
+      showSettled({ bill: billData.bill, customer: customerById(guestCustomers[g.index]) });
       setGuestSplitOpen(false);
       if (data.closed) {
         toast.success(t('tables.settled', { table: active.tableLabel || active.tableName, number: billData.bill.billNumber }));
@@ -1554,6 +1719,98 @@ export default function TablesPage() {
     } finally {
       setBusy('');
     }
+  }
+
+  /**
+   * The settled bill, on the customer's WhatsApp — the message is the server's, shown
+   * before it goes (components/WhatsappSheet.js). `entry` is { bill, customer }.
+   */
+  async function handleSendBill(entry) {
+    if (!entry?.bill?._id || !entry.customer?.phone) return;
+    try {
+      const data = await apiFetch(`/api/seller/bills/${entry.bill._id}/share`);
+      setWaSheet({
+        title: t('wa.sendBill'),
+        to: { name: entry.customer.name, phone: entry.customer.phone },
+        message: data.smsText,
+        link: data.whatsappLink,
+        auto: data.whatsappAuto,
+        appLink: data.appLink,
+        endpoint: `/api/seller/bills/${entry.bill._id}/whatsapp`,
+      });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
+  /**
+   * The customer link and UPI pay link for a bill (both minted by receipt-text). `upiLink`
+   * stays undefined while loading and becomes null when the shop has no UPI ID, so the
+   * panel can tell "loading" from "set up UPI in Settings".
+   */
+  async function receiptExtras(billId) {
+    try {
+      const r = await apiFetch(`/api/seller/bills/${billId}/receipt-text`);
+      return { upiLink: r.upiLink || null, billLink: r.billLink || null };
+    } catch {
+      return { upiLink: null, billLink: null };
+    }
+  }
+
+  // A settled bill on screen, its links filled in as soon as they arrive.
+  function showSettled({ bill, customer }) {
+    setSettledReceipt({ bill, customer: customer || null, upiLink: undefined, billLink: undefined });
+    receiptExtras(bill._id).then((extras) => {
+      setSettledReceipt((cur) => (cur?.bill?._id === bill._id ? { ...cur, ...extras } : cur));
+    });
+  }
+
+  /**
+   * Prints one settled bill's slip and resolves with what happened ('direct' | 'system' |
+   * 'skipped'), which the print button turns into "Printing…" / "Printed".
+   */
+  async function printSettled(entry) {
+    const extras = entry.billLink === undefined ? await receiptExtras(entry.bill._id) : entry;
+    // flushSync so the slip is in the DOM before printSlip reads it.
+    flushSync(() => setSlip({ bill: entry.bill, upiLink: extras.upiLink || null, billLink: extras.billLink || null }));
+    return printSlip({
+      shop: user,
+      role: 'receipt',
+      selector: '.thermal-receipt',
+      bodyClass: 'printing-receipt',
+      ready: qrSlotsReady,
+      onFallback: (message) => toast.info(message),
+      t,
+    });
+  }
+
+  // The customer's own link to the bill, on the clipboard — for a chat that isn't WhatsApp.
+  async function copySettledLink(entry) {
+    try {
+      const url = entry.billLink || (await apiFetch(`/api/seller/bills/${entry.bill._id}/link`)).url;
+      if (!url) return;
+      await navigator.clipboard.writeText(url);
+      toast.success(t('seller.billLinkCopied'));
+    } catch (err) {
+      toast.error(err?.status ? err.message : t('seller.billLinkCopyFailed'));
+    }
+  }
+
+  /**
+   * A bill settled without a customer — paid by UPI, say — and they now want it sent.
+   * The number goes onto the bill (an existing khata customer on that number is used, a
+   * new one is made otherwise; see attachBillCustomer). Throws so the form can show why.
+   */
+  async function attachSettledCustomer(phone, name) {
+    if (!settledReceipt?.bill?._id) return;
+    const data = await apiFetch(`/api/seller/bills/${settledReceipt.bill._id}/customer`, {
+      method: 'PATCH',
+      body: JSON.stringify({ phone, name: name || undefined }),
+    });
+    const customer = data.customer;
+    if (customer?.id) setCustomers((list) => (list.some((c) => c.id === customer.id) ? list : [customer, ...list]));
+    setSettledReceipt((cur) => (cur ? { ...cur, customer } : cur));
+    toast.success(t('seller.captureSaved', { name: customer?.name || phone }));
   }
 
   async function handleJoin() {
@@ -1589,11 +1846,6 @@ export default function TablesPage() {
     } catch (err) {
       toast.error(tableErrorText(err, t));
     }
-  }
-
-  function printSplitReceipt(entry) {
-    setSettledReceipt(entry);
-    requestAnimationFrame(() => handlePrintReceipt());
   }
 
   async function handleCancel() {
@@ -1743,43 +1995,41 @@ export default function TablesPage() {
                   options={[{ value: '', label: t('tables.unassigned') }, ...staffList.map((s) => ({ value: s.id, label: s.name }))]}
                 />
               )}
-              <button
-                type="button"
-                className="btn btn-secondary btn-inline"
-                disabled={busy !== '' || pendingCount === 0}
-                onClick={handleSendKot}
-              >
-                {busy === 'kot' ? t('common.saving') : t('tables.sendKot', { count: pendingCount })}
-              </button>
+              {/* A dine-in table's "send to kitchen" lives in the journey strip right below —
+                  one loud button per screen. Parcel/delivery has no strip, so it stays here. */}
+              {!(activeStage && active.orderType === 'dine_in') && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-small btn-inline"
+                  disabled={busy !== '' || pendingCount === 0}
+                  onClick={handleSendKot}
+                >
+                  <KitchenIcon size={15} /> {busy === 'kot' ? t('common.saving') : t('tables.sendKot', { count: pendingCount })}
+                </button>
+              )}
               {active.kots.length > 0 && (
                 <button
                   type="button"
-                  className="btn btn-secondary btn-inline"
+                  className="btn btn-secondary btn-small btn-inline"
                   data-tip={t('tables.reprintKotTip', { number: active.kots[active.kots.length - 1].number })}
                   onClick={() => handlePrintKot(active.kots[active.kots.length - 1])}
                 >
-                  <PrinterIcon size={17} /> {t('tables.printKot')}
+                  <PrinterIcon size={15} /> {t('tables.printKot')}
                 </button>
               )}
               <PrinterStatusChip role="kot" />
-              {active.orderType === 'dine_in' && (
-                <>
-                  <button type="button" className="btn btn-secondary btn-inline" onClick={() => setTransferPicking((v) => !v)}>
-                    <SwapIcon size={17} /> {t('tables.transfer')}
-                  </button>
-                  <button type="button" className="btn btn-secondary btn-inline" onClick={() => setMergePicking((v) => !v)}>
-                    <LayersIcon size={17} /> {t('tables.merge')}
-                  </button>
-                  {active.table && (
-                    <button type="button" className="btn btn-secondary btn-inline" onClick={() => { setJoinPicking((v) => !v); setJoinPick([]); }}>
-                      <PlusIcon size={17} /> {t('tables.joinTables')}
-                    </button>
-                  )}
-                </>
-              )}
-              <button type="button" className="icon-btn danger" data-tip={t('tables.cancelTable')} onClick={handleCancel}>
-                <TrashIcon size={17} />
-              </button>
+              {/* Moving, merging, pushing tables together and cancelling happen a few times an
+                  evening, not every minute — one menu instead of four buttons on the bar. */}
+              <RowMenu
+                tip={t('common.moreActions')}
+                className="order-bar__more"
+                items={[
+                  { label: t('tables.transfer'), icon: <SwapIcon size={15} />, onClick: () => { setMergePicking(false); setJoinPicking(false); setTransferPicking((v) => !v); }, hidden: active.orderType !== 'dine_in' },
+                  { label: t('tables.merge'), icon: <LayersIcon size={15} />, onClick: () => { setTransferPicking(false); setJoinPicking(false); setMergePicking((v) => !v); }, hidden: active.orderType !== 'dine_in' },
+                  { label: t('tables.joinTables'), icon: <PlusIcon size={15} />, onClick: () => { setTransferPicking(false); setMergePicking(false); setJoinPicking((v) => !v); setJoinPick([]); }, hidden: active.orderType !== 'dine_in' || !active.table },
+                  { label: t('tables.cancelTable'), icon: <TrashIcon size={15} />, onClick: handleCancel, danger: true },
+                ]}
+              />
             </div>
           </div>
 
@@ -1897,7 +2147,7 @@ export default function TablesPage() {
             </div>
           )}
 
-          <div className="pos-layout">
+          <div className="pos-layout tables-pos">
             {/* Left: the menu. */}
             <div className="pos-main">
               <div className="panel">
@@ -1912,6 +2162,7 @@ export default function TablesPage() {
                   const lockedSeats = others.flatMap((o) => o.occupiedSeats || []);
                   return (
                     <SeatPicker
+                      compact
                       table={table}
                       selectedSeats={seatPicks}
                       seatCounts={seatCounts}
@@ -1923,47 +2174,53 @@ export default function TablesPage() {
                     />
                   );
                 })()}
-                <div className={`menu-search${menuQuery ? ' has-query' : ''}`} role="search">
-                  <SearchIcon size={18} />
-                  <input
-                    id="menuSearch"
-                    type="search"
-                    autoComplete="off"
-                    enterKeyHint="go"
-                    value={menuQuery}
-                    onChange={(e) => setMenuQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && menu.length > 0 && menuQuery.trim()) {
-                        e.preventDefault();
-                        handleAddItem(menu[0]);
-                        setMenuQuery('');
-                      }
-                      if (e.key === 'Escape') setMenuQuery('');
-                    }}
-                    placeholder={t('tables.searchMenu')}
-                    aria-label={t('tables.searchMenu')}
-                  />
-                  {menuQuery && (
-                    <>
-                      <span className="menu-search__count">{t('tables.menuFound', { count: menu.length })}</span>
-                      <button type="button" className="menu-search__clear" aria-label={t('tables.menuClear')} onClick={() => { setMenuQuery(''); document.getElementById('menuSearch')?.focus(); }}>
-                        <XIcon size={16} />
-                      </button>
-                    </>
-                  )}
-                </div>
-                {menuQuery && menu.length > 0 && <p className="menu-search__hint">{t('tables.menuEnterHint', { name: menu[0].name })}</p>}
+                <MenuSearchBox
+                  value={menuQuery}
+                  onChange={setMenuQuery}
+                  search={menuSearch}
+                  qtyOnTable={qtyOnTable}
+                  onPick={(product, qty) => handleAddItem(product, qty)}
+                  onCategory={setCategoryFilter}
+                  isExpired={productIsExpired}
+                  t={t}
+                  lang={lang}
+                />
 
                 {categories.length > 0 && (
-                  <div className="category-tabs">
-                    <button type="button" className={`filter-pill ${!categoryFilter ? 'active' : ''}`} onClick={() => setCategoryFilter('')}>
-                      {t('tables.allCategories')}
-                    </button>
-                    {categories.map((c) => (
-                      <button key={c} type="button" className={`filter-pill ${categoryFilter === c ? 'active' : ''}`} onClick={() => setCategoryFilter(c)}>
-                        {c}
-                      </button>
-                    ))}
+                  <CategoryRail
+                    categories={categories}
+                    value={categoryFilter}
+                    onChange={setCategoryFilter}
+                    counts={categoryCounts}
+                    searching={menuSearching}
+                    t={t}
+                  />
+                )}
+
+                {/* What is on screen, and how it is ordered — one quiet line. */}
+                {products.length > 0 && (
+                  <div className="menu-results-bar">
+                    <span className="menu-results-bar__count">
+                      {menuSearching || categoryFilter
+                        ? t('tables.msearch.showing', { count: menuSearch.total })
+                        : t('tables.msearch.allDishes', { count: menuSearch.total })}
+                      {menuSearching && menuSearch.parsed.qty > 1 && (
+                        <span className="menu-results-bar__chip">{t('tables.msearch.qtyChip', { qty: menuSearch.parsed.qty })}</span>
+                      )}
+                      {(categoryFilter || menuSearching) && (
+                        <button type="button" className="link-btn" onClick={() => { setMenuQuery(''); setCategoryFilter(''); }}>
+                          {t('tables.msearch.reset')}
+                        </button>
+                      )}
+                    </span>
+                    <span className="menu-results-bar__sort">
+                      <Dropdown
+                        id="menuSort"
+                        value={menuSort}
+                        onChange={setMenuSort}
+                        options={MENU_SORTS.map((key) => ({ value: key, label: t(`tables.msearch.sort.${key}`) }))}
+                      />
+                    </span>
                   </div>
                 )}
 
@@ -1981,7 +2238,20 @@ export default function TablesPage() {
                       </Link>
                     </div>
                   ) : (
-                    <p className="empty-state">{t('tables.menuNoMatch')}</p>
+                    <div className="empty-state menu-no-match">
+                      <p>{t('tables.menuNoMatch')}</p>
+                      {menuSearch.didYouMean && (
+                        <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={() => setMenuQuery(menuSearch.didYouMean)}>
+                          <SearchIcon size={14} /> {t('tables.msearch.didYouMean')} {menuSearch.didYouMean}?
+                        </button>
+                      )}
+                      {categoryFilter && (
+                        <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={() => setCategoryFilter('')}>
+                          {t('tables.msearch.searchAll')}
+                        </button>
+                      )}
+                      <small>{t('tables.msearch.tips')}</small>
+                    </div>
                   )
                 ) : (
                   <div className="menu-grid">
@@ -2463,15 +2733,46 @@ export default function TablesPage() {
                                       </button>
                                     ))}
                                   </div>
-                                  {(guestModes[g.index] || 'cash') === 'khata' && (
+                                  {/* Every mode, like the whole-table bill: needed for
+                                      khata, optional otherwise so this bill can be sent. */}
+                                  <div className="customer-picker">
                                     <Dropdown
                                       value={guestCustomers[g.index] || ''}
                                       onChange={(v) => setGuestCustomers((c) => ({ ...c, [g.index]: v }))}
-                                      searchable={customers.length > 8}
+                                      searchable={billableCustomers.length > 8}
                                       searchPlaceholder={t('seller.customerSearchHint')}
                                       emptyLabel={t('seller.customerSearchNone')}
-                                      options={[{ value: '', label: '—' }, ...customers.map((c) => ({ value: c.id, label: `${c.name} (${c.phone})` }))]}
+                                      options={[
+                                        {
+                                          value: '',
+                                          label: (guestModes[g.index] || 'cash') === 'khata'
+                                            ? t('seller.selectCustomer')
+                                            : t('tables.billCustomer'),
+                                        },
+                                        ...customerOptions,
+                                      ]}
                                     />
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-small btn-inline"
+                                      onClick={() => setCustomerAddFor({ target: g.index })}
+                                      data-tip={t('seller.quickCustomerAdd')}
+                                      aria-label={t('seller.quickCustomerAdd')}
+                                    >
+                                      {/* Icon only: a split card can be 190px, and a worded
+                                          button left the name in the picker as "Custo…". */}
+                                      <PlusIcon size={15} />
+                                    </button>
+                                  </div>
+                                  {/* The picker truncates in a narrow card; the number being
+                                      sent to has to be readable in full. */}
+                                  {customerById(guestCustomers[g.index]) && (
+                                    <span className="cell-sub">
+                                      {customerLine(customerById(guestCustomers[g.index]))}
+                                    </span>
+                                  )}
+                                  {groupNeedsCustomer(g) && (
+                                    <p className="field-hint" style={{ margin: 0 }}>{t('tables.khataCustomerHint')}</p>
                                   )}
                                   {/* Only when someone else is still on the table — paying the
                                       only bill with food on it is just settling the table. */}
@@ -2513,19 +2814,35 @@ export default function TablesPage() {
                         </div>
                       </div>
 
-                      {settleMode === 'khata' && (
-                        <div className="field" style={{ marginBottom: 0 }}>
-                          <label>{t('seller.selectCustomer')}</label>
+                      {/* On every mode: required for khata, optional otherwise — a UPI
+                          or cash bill with a customer on it can be sent to them. */}
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label htmlFor="settle-customer">
+                          {settleMode === 'khata' ? t('seller.selectCustomer') : `${t('tables.billCustomer')} (${t('seller.optional')})`}
+                        </label>
+                        <div className="customer-picker">
                           <Dropdown
+                            id="settle-customer"
                             value={settleCustomerId}
                             onChange={setSettleCustomerId}
-                            searchable={customers.length > 8}
+                            searchable={billableCustomers.length > 8}
                             searchPlaceholder={t('seller.customerSearchHint')}
                             emptyLabel={t('seller.customerSearchNone')}
-                            options={[{ value: '', label: '—' }, ...customers.map((c) => ({ value: c.id, label: `${c.name} (${c.phone})` }))]}
+                            options={[{ value: '', label: t('seller.noKhataCustomer') }, ...customerOptions]}
                           />
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-small btn-inline"
+                            onClick={() => setCustomerAddFor({ target: 'settle' })}
+                            data-tip={t('seller.quickCustomerAdd')}
+                          >
+                            <PlusIcon size={15} /> {t('seller.newCustomerShort')}
+                          </button>
                         </div>
-                      )}
+                        <p className="field-hint" style={{ margin: '0.3rem 0 0' }}>
+                          {settleMode === 'khata' ? t('tables.khataCustomerHint') : t('tables.billCustomerHint')}
+                        </p>
+                      </div>
 
                       {settleMode === 'split' && (
                         <div className="split-panel">
@@ -2918,55 +3235,42 @@ export default function TablesPage() {
       )}
 
       {splitSettledReceipts.length > 0 && (
-        <div className="panel">
-          <div className="panel-head">
-            <h2>{t('tables.splitSettled', { table: splitSettledReceipts[0].bill.counter.split(' · ')[0], count: splitSettledReceipts.length })}</h2>
-            <button type="button" className="btn btn-secondary btn-inline" onClick={() => setSplitSettledReceipts([])}>
-              {t('common.close')}
-            </button>
-          </div>
-          <div className="table-wrap auto-height">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t('common.name')}</th>
-                  <th style={{ textAlign: 'right' }}>{t('common.total')}</th>
-                  <th className="tight" />
-                </tr>
-              </thead>
-              <tbody>
-                {splitSettledReceipts.map((entry) => (
-                  <tr key={entry.bill._id}>
-                    <td className="cell-strong">{entry.bill.counter} · #{entry.bill.billNumber}</td>
-                    <td className="num">{formatRupees(entry.bill.payableTotal ?? entry.bill.total, lang)}</td>
-                    <td className="tight">
-                      <button type="button" className="icon-btn" data-tip={t('tables.printBill')} onClick={() => printSplitReceipt(entry)}>
-                        <PrinterIcon size={17} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <SplitSettledBills
+          entries={splitSettledReceipts}
+          t={t}
+          lang={lang}
+          whatsappOn={whatsappOn}
+          onPrint={printSettled}
+          onSend={handleSendBill}
+          onCopyLink={copySettledLink}
+          onClose={() => setSplitSettledReceipts([])}
+        />
       )}
 
       {settledReceipt && (
-        <div className="panel">
-          <div className="panel-head">
-            <h2>{t('tables.settled', { table: settledReceipt.bill.counter, number: settledReceipt.bill.billNumber })}</h2>
-            <div className="row-actions">
-              <button type="button" className="btn btn-secondary btn-inline" onClick={handlePrintReceipt}>
-                <PrinterIcon size={17} /> {t('tables.printBill')}
-              </button>
-              <button type="button" className="btn btn-secondary btn-inline" onClick={() => setSettledReceipt(null)}>
-                {t('common.close')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <SettledBill
+          key={settledReceipt.bill._id}
+          entry={settledReceipt}
+          t={t}
+          lang={lang}
+          whatsappOn={whatsappOn}
+          onPrint={printSettled}
+          onSend={handleSendBill}
+          onCopyLink={copySettledLink}
+          onAttachCustomer={attachSettledCustomer}
+          onClose={() => setSettledReceipt(null)}
+        />
       )}
+
+      {customerAddFor && (
+        <CustomerQuickAdd
+          prefill={customerPrefill(customerAddFor.target)}
+          onCreated={handleCustomerAdded}
+          onClose={() => setCustomerAddFor(null)}
+        />
+      )}
+
+      {waSheet && <WhatsappSheet {...waSheet} onClose={() => setWaSheet(null)} />}
 
       {/* Manage the floor plan — its own component, one job on screen at a time. */}
       {manageOpen && (
@@ -3231,15 +3535,16 @@ export default function TablesPage() {
       {modifierPickFor && (
         <ModifierPicker
           product={modifierPickFor}
-          onCancel={() => setModifierPickFor(null)}
+          onCancel={() => { pendingQtyRef.current = 1; setModifierPickFor(null); }}
           onConfirm={(modifiers) => {
-            addItem(modifierPickFor, modifiers);
+            addItem(modifierPickFor, modifiers, pendingQtyRef.current);
+            pendingQtyRef.current = 1;
             setModifierPickFor(null);
           }}
         />
       )}
 
-      <ThermalReceipt receipt={settledReceipt?.bill} shop={user} upiLink={settledReceipt?.upiLink} t={t} />
+      <ThermalReceipt receipt={slip?.bill} shop={user} upiLink={slip?.upiLink} billLink={slip?.billLink} t={t} />
       <KotTicket kot={kotToPrint?.kot} order={kotToPrint?.order} shop={user} t={t} />
     </>
   );

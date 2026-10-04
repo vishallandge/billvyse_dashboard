@@ -18,6 +18,7 @@ import {
 } from '../../components/Icons';
 import RowMenu from '../../components/RowMenu';
 import { recordHref } from '../../../lib/routeId';
+import { customerOptionLabel } from '../../../lib/customerLabel';
 
 // Mirrors the enum in backend/models/Job.js.
 const STATUSES = ['received', 'in_progress', 'ready', 'delivered', 'cancelled'];
@@ -472,7 +473,7 @@ export default function JobsPage() {
                 <Dropdown
                   value={form.customerId}
                   onChange={(v) => setForm((f) => ({ ...f, customerId: v }))}
-                  options={[{ value: '', label: t('appointments.walkIn') }, ...customers.map((c) => ({ value: c.id, label: `${c.name} (${c.phone})` }))]}
+                  options={[{ value: '', label: t('appointments.walkIn') }, ...customers.map((c) => ({ value: c.id, label: customerOptionLabel(c) }))]}
                 />
               </div>
               {!form.customerId && (

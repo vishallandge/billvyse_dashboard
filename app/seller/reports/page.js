@@ -400,6 +400,12 @@ export default function ReportsPage() {
 
   const busy = downloading !== '';
   const hasRows = rows.length > 0;
+  // Only the very first load shows a skeleton. After that, the answer already on screen
+  // stays put (dimmed) while the next one is fetched. Unmounting it on every tap of a date
+  // chip collapsed the KPI cards and the chart, replayed their entrance animation and threw
+  // the page's scroll position around — on a phone that read as the screen glitching.
+  const firstLoad = loading && !data;
+  const refreshing = loading && Boolean(data);
 
   return (
     <>
@@ -532,7 +538,8 @@ export default function ReportsPage() {
       </div>
 
       {/* ---------- the answer, before the table that holds it ---------- */}
-      {!loading && kpis.length > 0 && (
+      <div className={`report-body${refreshing ? ' is-refreshing' : ''}`} aria-busy={loading}>
+      {!firstLoad && kpis.length > 0 && (
         <div className="stat-grid report-kpis">
           {kpis.map((kpi) => (
             <div className="stat-card" key={kpi.label}>
@@ -552,7 +559,7 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {!loading && chartHasValue && (
+      {!firstLoad && chartHasValue && (
         <div className="panel">
           <TrendChart
             type={chartConfig.type}
@@ -566,7 +573,7 @@ export default function ReportsPage() {
       )}
 
       <div className="panel report-panel">
-        {loading ? (
+        {firstLoad ? (
           <SkeletonTable rows={6} cols={5} />
         ) : !hasRows ? (
           <div className="empty-state-rich">
@@ -686,6 +693,7 @@ export default function ReportsPage() {
             />
           </>
         )}
+      </div>
       </div>
     </>
   );
