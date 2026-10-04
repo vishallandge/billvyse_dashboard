@@ -422,9 +422,9 @@ export default function PrintMenu({ doc, disabled = false, label, iconOnly = fal
         disabled={disabled || busy}
         onClick={toggle}
       >
-        <PrinterIcon size={17} />
+        <PrinterIcon size={15} />
         {!iconOnly && <span>{busy ? t('printDoc.printing') : text}</span>}
-        {!iconOnly && <ChevronDownIcon size={14} />}
+        {!iconOnly && <ChevronDownIcon size={15} />}
       </button>
       {menu ? createPortal(menu, document.body) : null}
       {sheet}

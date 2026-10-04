@@ -172,11 +172,11 @@ export default function PrinterSettings() {
                   ) : (
                     <button type="button" className="btn btn-secondary btn-small btn-inline" disabled={busy}
                       onClick={() => run(record.id, () => connect(record.id, { interactive: true }))}>
-                      {busy ? <SpinnerIcon size={14} /> : null} {t('printer.connect')}
+                      {busy ? <SpinnerIcon size={15} /> : null} {t('printer.connect')}
                     </button>
                   )}
                   <button type="button" className="icon-btn" data-tip={t('printer.settings')} aria-label={t('printer.settings')} onClick={() => setEditingId(record.id)}>
-                    <SettingsIcon size={16} />
+                    <SettingsIcon size={17} />
                   </button>
                   {isOn && (
                     <button type="button" className="link-btn" disabled={busy} onClick={() => run(record.id, () => disconnect(record.id))}>
@@ -184,7 +184,7 @@ export default function PrinterSettings() {
                     </button>
                   )}
                   <button type="button" className="icon-btn" data-tip={t('printer.remove')} aria-label={t('printer.remove')} onClick={() => handleRemove(record)}>
-                    <TrashIcon size={16} />
+                    <TrashIcon size={17} />
                   </button>
                 </div>
               </li>
@@ -352,7 +352,7 @@ function SlipTextSize({ settings }) {
         </button>
         {printerId && (
           <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={testThisSize} disabled={testing}>
-            {testing ? <SpinnerIcon size={14} /> : <PrinterIcon size={15} />} {t('printer.testThisSize')}
+            {testing ? <SpinnerIcon size={15} /> : <PrinterIcon size={15} />} {t('printer.testThisSize')}
           </button>
         )}
         {dirty && (
@@ -527,7 +527,7 @@ function LogoLook({ settings }) {
         </button>
         {printerId && (
           <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={testThisLook} disabled={testing}>
-            {testing ? <SpinnerIcon size={14} /> : <PrinterIcon size={15} />} {t('printer.logoTest')}
+            {testing ? <SpinnerIcon size={15} /> : <PrinterIcon size={15} />} {t('printer.logoTest')}
           </button>
         )}
         {dirty && <button type="button" className="link-btn" onClick={() => setLook(saved)}>{t('printer.textSizeReset')}</button>}
@@ -762,7 +762,7 @@ function NativeFinder({ kind, support, busy, onPick }) {
     <div className="printer-find">
       <div className="printer-find-head">
         <span>{scanning ? <><SpinnerIcon size={14} /> {t('printer.scanning')}</> : t('printer.pickOne')}</span>
-        <button type="button" className="link-btn" onClick={scan} disabled={scanning || busy}><RefreshIcon size={14} /> {t('printer.scanAgain')}</button>
+        <button type="button" className="link-btn" onClick={scan} disabled={scanning || busy}><RefreshIcon size={17} /> {t('printer.scanAgain')}</button>
       </div>
 
       {sorted.length > 0 ? (
@@ -958,7 +958,7 @@ function WebFinder({ kind, web, busy, onPick, forceWindows = false }) {
     <div className="printer-find">
       <div className="printer-find-head">
         <span>{scanning ? <><SpinnerIcon size={14} /> {t('printer.scanning')}</> : <><CheckCircleIcon size={14} /> {t('printer.bridgeReady')}</>}</span>
-        <button type="button" className="link-btn" onClick={scan} disabled={scanning || busy}><RefreshIcon size={14} /> {t('printer.scanAgain')}</button>
+        <button type="button" className="link-btn" onClick={scan} disabled={scanning || busy}><RefreshIcon size={17} /> {t('printer.scanAgain')}</button>
       </div>
       {found.length > 0 ? (
         <ul className="printer-devices">
@@ -1042,7 +1042,7 @@ function PortWarning({ printer, onFixed }) {
       <AlertIcon size={16} />
       <span>{t('printer.portWrong', { port: printer.port.replace(/:$/, ''), usb: printer.suggestPort })}</span>
       <button type="button" className="btn btn-primary btn-small btn-inline" onClick={fix} disabled={fixing}>
-        {fixing ? <SpinnerIcon size={14} /> : null} {t('printer.fixPort')}
+        {fixing ? <SpinnerIcon size={15} /> : null} {t('printer.fixPort')}
       </button>
     </div>
   );
@@ -1096,7 +1096,7 @@ function WindowsPrinterFinder({ busy, onPick }) {
     <div className="printer-find">
       <div className="printer-find-head">
         <span><CheckCircleIcon size={14} /> {t('printer.bridgeReady')}</span>
-        <button type="button" className="link-btn" onClick={load} disabled={busy}><RefreshIcon size={14} /> {t('printer.scanAgain')}</button>
+        <button type="button" className="link-btn" onClick={load} disabled={busy}><RefreshIcon size={17} /> {t('printer.scanAgain')}</button>
       </div>
       {printers.length > 0 ? (
         <ul className="printer-devices">
@@ -1247,7 +1247,7 @@ export function PrinterSetupForm({ id, firstRun = false }) {
 
       <div className="printer-test">
         <button type="button" className={`btn ${firstRun && !tested ? 'btn-primary' : 'btn-secondary'} btn-small btn-inline`} onClick={test} disabled={testing}>
-          {testing ? <SpinnerIcon size={14} /> : <PrinterIcon size={15} />} {tested ? t('printer.testAgain') : t('printer.test')}
+          {testing ? <SpinnerIcon size={15} /> : <PrinterIcon size={15} />} {tested ? t('printer.testAgain') : t('printer.test')}
         </button>
         {tested && (
           <div className="printer-test-q">

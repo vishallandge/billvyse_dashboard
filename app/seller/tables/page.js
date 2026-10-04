@@ -2242,7 +2242,7 @@ export default function TablesPage() {
                       <p>{t('tables.menuNoMatch')}</p>
                       {menuSearch.didYouMean && (
                         <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={() => setMenuQuery(menuSearch.didYouMean)}>
-                          <SearchIcon size={14} /> {t('tables.msearch.didYouMean')} {menuSearch.didYouMean}?
+                          <SearchIcon size={15} /> {t('tables.msearch.didYouMean')} {menuSearch.didYouMean}?
                         </button>
                       )}
                       {categoryFilter && (

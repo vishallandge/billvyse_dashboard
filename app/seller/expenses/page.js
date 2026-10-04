@@ -682,7 +682,7 @@ export default function ExpensesPage() {
                         </span>
                         <strong className="xp-due-amount">{formatRupees(due.amount, lang, { decimals: false })}</strong>
                         <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={() => postRecurring(due)}>
-                          <PlusIcon size={14} />
+                          <PlusIcon size={15} />
                           {t('common.add')}
                         </button>
                       </div>
