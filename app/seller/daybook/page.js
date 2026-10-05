@@ -547,6 +547,11 @@ export default function DayBookPage() {
                         <strong>
                           {entry.action === 'reopened'
                             ? t('daybook.historyReopened', { amount: formatRupees(entry.amount, lang) })
+                            : entry.action === 'expenseDeleted'
+                            ? t(entry.kind === 'income' ? 'daybook.historyIncomeDeleted' : 'daybook.historyExpenseDeleted', {
+                                amount: formatRupees(entry.amount, lang),
+                                note: entry.note || '—',
+                              })
                             : entry.action === 'movementDeleted'
                             ? t('daybook.historyMovementDeleted', {
                                 kind: t(`daybook.movementKind.${entry.kind}`),

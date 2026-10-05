@@ -718,6 +718,7 @@ export default function CustomerLedgerPage() {
       )}
 
       <KhataBills customerId={id} t={t} onChanged={load} reloadKey={reloadKey} confirm={confirm} />
+      <KhataCorrections customerId={id} t={t} reloadKey={reloadKey} />
 
       {historyOpen && (
         <LedgerHistoryModal
@@ -852,6 +853,57 @@ export default function CustomerLedgerPage() {
  * would silently move money between two days' takings that have already been counted and
  * reported, which is a different and much larger promise than fixing a mistyped figure.
  */
+/**
+ * Entries taken off (or changed on) this khata — struck through in red, with the amount, who
+ * did it, when and why.
+ *
+ * The server always kept this record (and recounts the balance from what survives), but no
+ * screen showed it to the shop, so a deleted ₹2,000 udhaar simply vanished from the page. A
+ * customer who says "maine to diya tha" and an owner who asks "ye entry kisne hatai" both
+ * get their answer here.
+ */
+function KhataCorrections({ customerId, t, reloadKey }) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    apiFetch(`/api/seller/khata/customers/${customerId}/corrections`)
+      .then((data) => alive && setRows(data.corrections || []))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [customerId, reloadKey]);
+  if (!rows.length) return null;
+  return (
+    <div className="panel khata-corrections">
+      <h3 className="khata-corrections-title">{t('seller.khataCorrectionsTitle')}</h3>
+      <ul className="khata-corrections-list">
+        {rows.map((row) => {
+          const m = row.meta || {};
+          const deleted = row.action === 'khata.entry.deleted';
+          const kind = (m.type || m.before?.type) === 'credit' ? t('seller.recordCredit') : t('seller.recordPayment');
+          const amount = m.amount ?? m.before?.amount;
+          return (
+            <li key={row.id} className={deleted ? 'is-deleted' : 'is-edited'}>
+              <span className="khata-corrections-what">
+                {kind} {amount != null ? inr(amount) : ''}
+                {deleted ? '' : m.after?.amount != null ? ` → ${inr(m.after.amount)}` : ''}
+              </span>
+              <span className="khata-corrections-who">
+                {t(deleted ? 'seller.khataEntryDeletedBy' : 'seller.khataEntryEditedBy', {
+                  name: row.by || '—',
+                  time: new Date(row.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+                })}
+                {m.reason ? ` · ${m.reason}` : ''}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function EditEntryModal({ customerId, txn, t, onClose, onSaved }) {
   const [amount, setAmount] = useState(String(txn.amount));
   const [note, setNote] = useState(txn.note || '');

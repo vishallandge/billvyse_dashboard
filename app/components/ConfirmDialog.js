@@ -93,12 +93,18 @@ function ConfirmDialog({ request, onSettle }) {
     tone = 'warning',
     title,
     body,
-    details,
+    details: rawDetails,
     confirmLabel,
     cancelLabel,
     input,
     checkbox,
   } = request;
+
+  // A single consequence is often passed as a bare string. `.map` on a string throws, and
+  // that took the whole screen down at the exact moment somebody pressed Delete — so one
+  // line or a list, both render.
+  const details = (Array.isArray(rawDetails) ? rawDetails : rawDetails ? [rawDetails] : [])
+    .filter((detail) => detail !== null && detail !== undefined && detail !== '');
 
   const [value, setValue] = useState(input?.defaultValue ?? '');
   const [checked, setChecked] = useState(Boolean(checkbox?.defaultChecked));

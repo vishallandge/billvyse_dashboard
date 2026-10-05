@@ -426,7 +426,7 @@ export default function ExpensesPage() {
   }
 
   async function handleDelete(entry) {
-    if (!(await confirm({ tone: 'danger', title: t('common.delete'), body: t('expenses.confirmDelete'), confirmLabel: t('common.delete') }))) return;
+    if (!(await confirm({ tone: 'danger', title: t('common.delete'), body: `${t('expenses.confirmDelete')} ${t('expenses.deleteMoneyNote', { amount: '₹' + Number(entry.amount || 0).toFixed(2) })}`, confirmLabel: t('common.delete') }))) return;
     try {
       await apiFetch(`/api/seller/expenses/${entry._id}`, { method: 'DELETE' });
       toast.success(t('expenses.deleted'));

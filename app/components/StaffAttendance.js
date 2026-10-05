@@ -38,6 +38,20 @@ function todayStr() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Whether somebody was on the books on a given day.
+ *
+ * The grid used to list everyone who ever had an account — so "Everyone present" marked a
+ * man who left in March as present today, and that row then pulled him back onto the pay
+ * sheet. Somebody who already has a row for the day stays visible regardless, so a record
+ * can always be seen and corrected.
+ */
+function onBooks(member, day) {
+  if (member.joinedOn && member.joinedOn > day) return false;
+  if (member.leftOn) return member.leftOn >= day;
+  return member.isActive !== false;
+}
+
 // The day's rows, keyed by whose they are, so the grid can ask "is this person marked"
 // without walking the list once per row.
 function indexByStaff(records) {
@@ -91,6 +105,8 @@ export default function StaffAttendance({ staff, month, onMonthChange }) {
   const [editing, setEditing] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const dayStaff = staff.filter((member) => onBooks(member, day) || dayRows[member.id]);
+
   const sort = useSort(records, SORT_ACCESSORS, { key: 'date', dir: 'desc' });
   const page = usePagination(sort.sorted, { pageSize: 25, resetKey: `${month}|${filterStaffId}` });
 
@@ -142,7 +158,7 @@ export default function StaffAttendance({ staff, month, onMonthChange }) {
   // The overwhelmingly common morning: everybody turned up. Marks only the ones with no
   // row yet, so it never overwrites an absence somebody already recorded.
   async function markEveryonePresent() {
-    const entries = staff
+    const entries = dayStaff
       .filter((member) => !dayRows[member.id])
       .map((member) => ({ staffId: member.id, status: 'present' }));
     if (entries.length === 0) return;
@@ -151,7 +167,7 @@ export default function StaffAttendance({ staff, month, onMonthChange }) {
     try {
       const data = await apiFetch('/api/seller/staff/attendance/mark-day', {
         method: 'POST',
-        body: JSON.stringify({ date: day, entries }),
+        body: JSON.stringify({ date: day, entries, onlyMissing: true }),
       });
       setDayRows(indexByStaff(data.records));
       toast.success(t('staff.daySaved'));
@@ -235,7 +251,7 @@ export default function StaffAttendance({ staff, month, onMonthChange }) {
   }
 
   const staffOptions = staff.map((s) => ({ value: s.id, label: s.name }));
-  const markedCount = staff.filter((member) => dayRows[member.id]).length;
+  const markedCount = dayStaff.filter((member) => dayRows[member.id]).length;
 
   return (
     <div className="staff-tab">
@@ -257,12 +273,12 @@ export default function StaffAttendance({ staff, month, onMonthChange }) {
             />
           </div>
           <div className="attendance-day-meta">
-            <span className="cell-sub">{t('staff.markedOf', { done: markedCount, total: staff.length })}</span>
+            <span className="cell-sub">{t('staff.markedOf', { done: markedCount, total: dayStaff.length })}</span>
             <button
               type="button"
               className="btn btn-secondary btn-small btn-inline"
               onClick={markEveryonePresent}
-              disabled={markingAll || markedCount === staff.length}
+              disabled={markingAll || markedCount === dayStaff.length}
             >
               {markingAll ? t('common.saving') : t('staff.allPresent')}
             </button>
@@ -271,8 +287,9 @@ export default function StaffAttendance({ staff, month, onMonthChange }) {
 
         <p className="field-hint">{t('staff.dayHint')} {t('staff.correctBelow')}</p>
 
+        {dayStaff.length === 0 && <p className="empty-state">{t('staff.noOneOnDay')}</p>}
         <ul className="attendance-day-list">
-          {staff.map((member) => {
+          {dayStaff.map((member) => {
             const row = dayRows[member.id];
             return (
               <li key={member.id} className="attendance-day-row">

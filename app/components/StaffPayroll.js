@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, downloadFile } from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiErrors';
 import { useLanguage } from './LanguageProvider';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmDialog';
 import { SkeletonTable } from './Skeleton';
 import Dropdown from './Dropdown';
-import { WalletIcon, RupeeIcon, TrashIcon, UsersIcon, InfoIcon, DownloadIcon, PlusIcon, MinusIcon, CheckCircleIcon } from './Icons';
+import {
+  WalletIcon, RupeeIcon, TrashIcon, UsersIcon, InfoIcon, DownloadIcon, PlusIcon, MinusIcon,
+  CheckCircleIcon, EditIcon, CalendarIcon, UndoIcon,
+} from './Icons';
 import Modal from './Modal';
 import RowMenu from './RowMenu';
 import { formatDate } from '../../lib/format';
@@ -15,42 +19,78 @@ import { formatDate } from '../../lib/format';
 // The two on the left hand money over; the two on the right only change what is owed.
 const KINDS = ['salary', 'advance', 'bonus', 'deduction'];
 const MOVES_MONEY = ['salary', 'advance'];
+// Written in pairs by "carry forward"; removed together, never edited.
+const CARRY = ['carryIn', 'carryOut'];
 
 const KIND_LABEL = {
   salary: 'staff.kindSalary',
   advance: 'staff.kindAdvance',
   bonus: 'staff.kindBonus',
   deduction: 'staff.kindDeduction',
+  carryIn: 'staff.kindCarryIn',
+  carryOut: 'staff.kindCarryOut',
+};
+
+const KIND_BADGE = {
+  salary: 'badge-active',
+  advance: 'badge-pending',
+  bonus: 'badge-pending',
+  deduction: 'badge-inactive',
+  carryIn: 'badge-inactive',
+  carryOut: 'badge-inactive',
 };
 
 function rupees(n) {
   return `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+// A signed figure that reads the right way round: "−₹500", never "₹-500".
+function signedRupees(n) {
+  const value = Number(n) || 0;
+  return value < 0 ? `−${rupees(-value)}` : rupees(value);
+}
+
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function monthLabel(period) {
+  const [year, month] = String(period || '').split('-').map(Number);
+  if (!year || !month) return period || '';
+  return new Date(year, month - 1, 15).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+}
+
+// The date input wants the shop's calendar day, not the UTC one toISOString gives.
+function dayKeyOf(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return todayKey();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Month-end pagaar, and the record of what was actually handed over.
  *
- * The gap this fills: a staff account carried a commission percentage and nothing else,
- * so the app could not answer the one question a dukandar asks on the 1st — *is mahine
- * kitna banta hai, kitna de diya, kitna baaki*. Salary existed only as a free-text
- * kharcha with a name typed into it.
- *
- * The figures come from the server (see payrollSummary): commission is computed from the
- * bills credited to each person, never stored, so it can never drift from what the
- * Reports page says. Salary is never pro-rated automatically — see the absent-day cut
- * below, which is offered but always pressed by the owner.
+ * Every figure comes from the server's payroll sheet (see buildPayroll) and every row adds
+ * up on screen: pichla baaki + banta hai − diya − aage gaya = baaki. Commission is computed
+ * from the bills credited to each person, never stored. Salary is only ever pro-rated by
+ * the days somebody was on the books (joined / left), never by attendance on its own — the
+ * absence cut is offered, worked out on the server, and pressed by the owner.
  */
 export default function StaffPayroll({ staff, month, onMonthChange }) {
   const { t, lang } = useLanguage();
   const toast = useToast();
   const confirm = useConfirm();
 
-  const [payroll, setPayroll] = useState({ rows: [], totals: { earned: 0, paid: 0, payable: 0 }, daysInMonth: 30 });
+  const [payroll, setPayroll] = useState({ rows: [], totals: { earned: 0, paid: 0, payable: 0, previous: 0, carriedForward: 0 }, daysInMonth: 30 });
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [entry, setEntry] = useState(null);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [carrying, setCarrying] = useState(false);
+
+  const fail = (err) => toast.error(apiErrorMessage(lang, err));
 
   function load() {
     setLoading(true);
@@ -59,10 +99,14 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
       apiFetch(`/api/seller/staff/payments?month=${month}`),
     ])
       .then(([payrollData, paymentData]) => {
-        setPayroll(payrollData);
-        setPayments(paymentData.payments);
+        setPayroll({
+          ...payrollData,
+          rows: payrollData?.rows || [],
+          totals: { previous: 0, carriedForward: 0, ...(payrollData?.totals || {}) },
+        });
+        setPayments(paymentData?.payments || []);
       })
-      .catch((err) => toast.error(err.message))
+      .catch(fail)
       .finally(() => setLoading(false));
   }
 
@@ -73,12 +117,27 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
   // presses "pay pagaar" and the amount is already the amount.
   function openEntry(row, kind) {
     setEntry({
+      id: null,
       staffId: row.staffId,
       name: row.name,
       kind,
       amount: kind === 'salary' && row.payable > 0 ? String(row.payable) : '',
       paymentMode: 'cash',
+      date: todayKey(),
       note: '',
+    });
+  }
+
+  function openEdit(payment) {
+    setEntry({
+      id: payment.id,
+      staffId: payment.staffId,
+      name: payment.staffName,
+      kind: payment.kind,
+      amount: String(payment.amount),
+      paymentMode: payment.paymentMode || 'cash',
+      date: dayKeyOf(payment.date),
+      note: payment.note || '',
     });
   }
 
@@ -86,27 +145,44 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
     event.preventDefault();
     const amount = Number(entry.amount);
     if (!amount || amount <= 0) {
-      toast.error(t('staff.amount'));
+      toast.error(t('staff.amountRequired'));
+      return;
+    }
+    if (entry.date && entry.date > todayKey()) {
+      toast.error(t('staff.noFutureDate'));
       return;
     }
     setSaving(true);
     try {
-      await apiFetch('/api/seller/staff/payments', {
-        method: 'POST',
-        body: JSON.stringify({
-          staffId: entry.staffId,
-          kind: entry.kind,
-          amount,
-          period: month,
-          paymentMode: entry.paymentMode,
-          note: entry.note,
-        }),
-      });
+      if (entry.id) {
+        await apiFetch(`/api/seller/staff/payments/${entry.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            amount,
+            paymentMode: entry.paymentMode,
+            note: entry.note,
+            date: entry.date,
+          }),
+        });
+      } else {
+        await apiFetch('/api/seller/staff/payments', {
+          method: 'POST',
+          body: JSON.stringify({
+            staffId: entry.staffId,
+            kind: entry.kind,
+            amount,
+            period: month,
+            paymentMode: entry.paymentMode,
+            date: entry.date,
+            note: entry.note,
+          }),
+        });
+      }
       toast.success(t('staff.paymentSaved'));
       setEntry(null);
       load();
     } catch (err) {
-      toast.error(err.message);
+      fail(err);
     } finally {
       setSaving(false);
     }
@@ -115,35 +191,74 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
   /**
    * The one place attendance touches money, and it is opt-in on purpose.
    *
-   * The app never cuts anyone's pagaar on its own — how a shop treats an absent day is a
-   * decision about a person, and every shop makes it differently. This works the figure
-   * out at a plain per-day rate and enters it as a visible `deduction` row the owner can
-   * see on the sheet and delete if they change their mind.
+   * The figure is the server's (full pagaar ÷ days in month × (absent + half of half days)),
+   * less whatever was already cut for these days — so a second press can never take the
+   * same days twice. It lands as a visible deduction the owner can edit or remove.
    */
   async function cutForAbsence(row) {
-    const perDay = row.salary / (payroll.daysInMonth || 30);
-    const amount = Math.round(perDay * row.absent);
+    const perDay = row.monthlySalary / (payroll.daysInMonth || 30);
     const ok = await confirm({
-      title: t('staff.absentCut', { days: row.absent }),
-      body: t('staff.absentCutHint', { amount: rupees(amount), rate: rupees(Math.round(perDay)) }),
+      title: t('staff.absentCut', { days: row.absent + (row.halfDay ? row.halfDay / 2 : 0) }),
+      body: t('staff.absentCutHint', { amount: rupees(row.absenceCutDue), rate: rupees(Math.round(perDay)) }),
+      details: [
+        { label: t('staff.absent'), value: String(row.absent) },
+        ...(row.halfDay ? [{ label: t('staff.halfDay'), value: String(row.halfDay) }] : []),
+        { label: t('staff.deduction'), value: `−${rupees(row.absenceCutDue)}`, tone: 'danger' },
+      ],
       confirmLabel: t('staff.absentCutApply'),
     });
     if (!ok) return;
     try {
-      await apiFetch('/api/seller/staff/payments', {
+      await apiFetch('/api/seller/staff/payments/absence-cut', {
         method: 'POST',
-        body: JSON.stringify({
-          staffId: row.staffId,
-          kind: 'deduction',
-          amount,
-          period: month,
-          note: t('staff.absentCut', { days: row.absent }),
-        }),
+        body: JSON.stringify({ staffId: row.staffId, period: month }),
       });
       toast.success(t('staff.absentCutDone'));
       load();
     } catch (err) {
-      toast.error(err.message);
+      fail(err);
+    }
+  }
+
+  /**
+   * Close a month's balance into the next one — one person, or everyone left open.
+   *
+   * Without this each month was an island: an advance bigger than the pagaar sat on its
+   * month as "paid ahead" and the next month asked for the full pagaar again, and money left
+   * unpaid simply fell off the sheet when the month changed.
+   */
+  async function carryForward({ period, row = null, amount, count }) {
+    const next = (() => {
+      const [y, m] = period.split('-').map(Number);
+      const d = new Date(y, m, 15);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    })();
+    const ok = await confirm({
+      tone: 'info',
+      title: t('staff.carryTitle', { from: monthLabel(period), to: monthLabel(next) }),
+      body: row ? t('staff.carryBodyOne', { name: row.name }) : t('staff.carryBodyAll', { count }),
+      details: row
+        ? [{
+          label: row.payable > 0 ? t('staff.carryOwed') : t('staff.carryAhead'),
+          value: rupees(Math.abs(row.payable)),
+          tone: row.payable > 0 ? 'danger' : undefined,
+        }]
+        : amount,
+      confirmLabel: t('staff.carryApply'),
+    });
+    if (!ok) return;
+    setCarrying(true);
+    try {
+      await apiFetch('/api/seller/staff/payments/carry', {
+        method: 'POST',
+        body: JSON.stringify({ period, staffId: row ? row.staffId : undefined }),
+      });
+      toast.success(t('staff.carryDone'));
+      load();
+    } catch (err) {
+      fail(err);
+    } finally {
+      setCarrying(false);
     }
   }
 
@@ -155,22 +270,26 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
     try {
       await downloadFile(`/api/seller/staff/payroll?month=${month}&format=xlsx`, `payroll-${month}.xlsx`);
     } catch (err) {
-      toast.error(err.message);
+      fail(err);
     } finally {
       setDownloading(false);
     }
   }
 
   async function removePayment(payment) {
+    const isCarry = CARRY.includes(payment.kind);
+    const details = [];
+    // Only said when it is true — a bonus or a deduction never wrote a kharcha.
+    if (payment.hasExpense) details.push(t('staff.confirmDeletePaymentBooks'));
+    if (isCarry) details.push(t('staff.confirmDeleteCarry'));
     const ok = await confirm({
       tone: 'danger',
       title: t('common.delete'),
       body: t('staff.confirmDeletePayment', {
-        kind: t(KIND_LABEL[payment.kind]),
-        amount: Number(payment.amount).toLocaleString('en-IN'),
+        kind: t(KIND_LABEL[payment.kind] || 'staff.entryKind'),
+        amount: Math.abs(Number(payment.amount) || 0).toLocaleString('en-IN'),
       }),
-      // Only said when it is true — a bonus or a deduction never wrote a kharcha.
-      details: payment.hasExpense ? t('staff.confirmDeletePaymentBooks') : undefined,
+      details,
       confirmLabel: t('common.delete'),
     });
     if (!ok) return;
@@ -179,7 +298,7 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
       toast.success(t('staff.paymentRemoved'));
       load();
     } catch (err) {
-      toast.error(err.message);
+      fail(err);
     }
   }
 
@@ -192,13 +311,18 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
     );
   }
 
+  const { totals } = payroll;
+  const showPrevious = payroll.rows.some((row) => row.previous);
+  const open = payroll.previousOpen;
+  const isEditing = Boolean(entry?.id);
+
   return (
     <div className="staff-tab">
       <div className="data-panel">
         <div className="panel-head">
           <h2>{t('staff.payrollTitle')}</h2>
           <div className="panel-tools">
-            <input type="month" value={month} onChange={(e) => onMonthChange(e.target.value)} />
+            <input type="month" value={month} onChange={(e) => e.target.value && onMonthChange(e.target.value)} />
             <button
               type="button"
               className="btn btn-secondary btn-small btn-inline"
@@ -214,6 +338,39 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
         <div className="data-panel-body">
           <p className="field-hint" style={{ marginTop: 0 }}>{t('staff.payrollHint')}</p>
 
+          {/* Last month left open is money that stops being on any screen the moment the
+              month changes. Said here, with the one press that brings it across. */}
+          {!loading && open && (
+            <div className="info-banner banner-with-action">
+              <span>
+                <InfoIcon size={15} />
+                {t('staff.previousOpen', { month: monthLabel(open.month), count: open.count })}
+                {open.owed > 0 && ` ${t('staff.previousOpenOwed', { amount: rupees(open.owed) })}`}
+                {open.ahead > 0 && ` ${t('staff.previousOpenAhead', { amount: rupees(open.ahead) })}`}
+              </span>
+              <span style={{ display: 'inline-flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <button type="button" className="banner-action" onClick={() => onMonthChange(open.month)}>
+                  {t('staff.previousOpenView')}
+                </button>
+                <button
+                  type="button"
+                  className="banner-action"
+                  disabled={carrying}
+                  onClick={() => carryForward({
+                    period: open.month,
+                    count: open.count,
+                    amount: [
+                      ...(open.owed > 0 ? [{ label: t('staff.carryOwed'), value: rupees(open.owed), tone: 'danger' }] : []),
+                      ...(open.ahead > 0 ? [{ label: t('staff.carryAhead'), value: rupees(open.ahead) }] : []),
+                    ],
+                  })}
+                >
+                  {t('staff.previousOpenBring')}
+                </button>
+              </span>
+            </div>
+          )}
+
           {loading ? (
             <SkeletonTable rows={4} cols={6} />
           ) : (
@@ -226,29 +383,39 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                     that is a debt the shop still has to settle. */}
                 <div className="stat-card">
                   <div className="stat-icon"><RupeeIcon size={16} /></div>
-                  <div className="stat-value">{rupees(payroll.totals.earned)}</div>
+                  <div className="stat-value">{rupees(totals.earned)}</div>
                   <div className="stat-label">{t('staff.totalEarned')}</div>
+                  {totals.previous ? (
+                    <div className="stat-sub">{t('staff.plusPrevious', { amount: signedRupees(totals.previous) })}</div>
+                  ) : null}
                 </div>
                 <div className="stat-card accent-success">
                   <div className="stat-icon"><CheckCircleIcon size={16} /></div>
-                  <div className="stat-value">{rupees(payroll.totals.paid)}</div>
+                  <div className="stat-value">{rupees(totals.paid)}</div>
                   <div className="stat-label">{t('staff.totalPaid')}</div>
                 </div>
                 <div className="stat-card accent-danger">
                   <div className="stat-icon"><WalletIcon size={16} /></div>
-                  <div className="stat-value amount-out">{rupees(payroll.totals.payable)}</div>
+                  <div className="stat-value amount-out">{signedRupees(totals.payable)}</div>
                   <div className="stat-label">{t('staff.totalPayable')}</div>
+                  {totals.carriedForward ? (
+                    <div className="stat-sub">{t('staff.carriedOutSub', { amount: signedRupees(totals.carriedForward) })}</div>
+                  ) : null}
                 </div>
               </div>
 
+              {payroll.rows.length === 0 ? (
+                <p className="empty-state">{t('staff.noOneThisMonth')}</p>
+              ) : (
               <div className="table-wrap auto-height">
-                <table className="data-table sticky-actions" style={{ minWidth: '860px' }}>
+                <table className="data-table sticky-actions" style={{ minWidth: showPrevious ? '960px' : '860px' }}>
                   <thead>
                     <tr>
                       <th>{t('common.name')}</th>
                       <th className="num">{t('staff.salary')}</th>
                       <th className="num">{t('staff.commissionEarned')}</th>
                       <th className="num">{t('staff.earned')}</th>
+                      {showPrevious && <th className="num">{t('staff.previousBalance')}</th>}
                       <th className="num">{t('staff.paidSoFar')}</th>
                       <th className="num">{t('staff.payable')}</th>
                       <th className="tight" style={{ textAlign: 'right' }}>{t('common.actions')}</th>
@@ -264,12 +431,27 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                               {[
                                 row.jobTitle,
                                 `${row.present} ${t('staff.present').toLowerCase()}`,
+                                row.halfDay ? `${row.halfDay} ${t('staff.halfDay').toLowerCase()}` : null,
                                 row.absent ? `${row.absent} ${t('staff.absent').toLowerCase()}` : null,
                               ].filter(Boolean).join(' · ')}
                             </span>
+                            {row.leftOn && (
+                              <span className="cell-sub">{t('staff.leftOnShort', { date: formatDate(row.leftOn, lang) })}</span>
+                            )}
                           </div>
                         </td>
-                        <td className="num">{row.salary ? rupees(row.salary) : '—'}</td>
+                        <td className="num">
+                          <div className="cell-stack">
+                            <span>{row.monthlySalary ? rupees(row.salary) : '—'}</span>
+                            {/* Joining or leaving mid-month — the only thing that ever
+                                changes the pagaar on its own, so it always says why. */}
+                            {row.salaryProrated && (
+                              <span className="cell-sub">
+                                {t('staff.proratedDays', { days: row.employedDays, total: payroll.daysInMonth, full: rupees(row.monthlySalary) })}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="num">
                           <div className="cell-stack">
                             <span>{row.commission ? rupees(row.commission) : '—'}</span>
@@ -291,6 +473,9 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                             )}
                           </div>
                         </td>
+                        {showPrevious && (
+                          <td className="num">{row.previous ? signedRupees(row.previous) : '—'}</td>
+                        )}
                         <td className="num">
                           <div className="cell-stack">
                             <span>{rupees(row.paid)}</span>
@@ -300,13 +485,18 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                           </div>
                         </td>
                         <td className="num">
-                          {row.payable > 0 ? (
-                            <strong className="amount-out">{rupees(row.payable)}</strong>
-                          ) : row.payable < 0 ? (
-                            <span className="cell-sub">{t('staff.overpaid')} {rupees(-row.payable)}</span>
-                          ) : (
-                            <span className="cell-sub">{t('staff.settled')}</span>
-                          )}
+                          <div className="cell-stack">
+                            {row.payable >= 0.5 ? (
+                              <strong className="amount-out">{rupees(row.payable)}</strong>
+                            ) : row.payable <= -0.5 ? (
+                              <span className="cell-sub">{t('staff.overpaid')} {rupees(-row.payable)}</span>
+                            ) : (
+                              <span className="cell-sub">{t('staff.settled')}</span>
+                            )}
+                            {row.carriedForward ? (
+                              <span className="cell-sub">{t('staff.carriedOutSub', { amount: signedRupees(row.carriedForward) })}</span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="tight">
                           <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
@@ -335,12 +525,23 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                                   onClick: () => openEntry(row, 'bonus'),
                                 },
                                 {
-                                  /* Offered only where it can mean something: somebody on a
-                                     salary who actually missed days. */
                                   label: t('staff.addDeduction'),
                                   icon: <MinusIcon size={15} />,
-                                  hidden: !(row.absent > 0 && row.salary > 0),
+                                  onClick: () => openEntry(row, 'deduction'),
+                                },
+                                {
+                                  /* Offered only while there is something left to cut —
+                                     once pressed, it disappears until another absence. */
+                                  label: t('staff.absentCutMenu', { amount: rupees(row.absenceCutDue) }),
+                                  icon: <CalendarIcon size={15} />,
+                                  hidden: !(row.absenceCutDue >= 1),
                                   onClick: () => cutForAbsence(row),
+                                },
+                                {
+                                  label: t('staff.carryMenu'),
+                                  icon: <UndoIcon size={15} />,
+                                  hidden: !(Math.abs(row.payable) >= 1) || month > todayKey().slice(0, 7),
+                                  onClick: () => carryForward({ period: month, row }),
                                 },
                               ]}
                             />
@@ -351,6 +552,7 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                   </tbody>
                 </table>
               </div>
+              )}
             </>
           )}
         </div>
@@ -368,7 +570,7 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
           <p className="empty-state">{t('staff.noPayments')}</p>
         ) : (
           <div className="table-wrap auto-height">
-            <table className="data-table sticky-actions" style={{ minWidth: '560px' }}>
+            <table className="data-table sticky-actions" style={{ minWidth: '620px' }}>
               <thead>
                 <tr>
                   <th>{t('expenses.date')}</th>
@@ -379,36 +581,49 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td className="cell-muted">{formatDate(payment.date, lang)}</td>
-                    <td>
-                      <div className="cell-stack">
-                        <span className="cell-strong">{payment.staffName}</span>
-                        {payment.note && <span className="cell-sub">{payment.note}</span>}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${payment.kind === 'deduction' ? 'badge-inactive' : 'badge-pending'}`}>
-                        {t(KIND_LABEL[payment.kind])}
-                      </span>
-                    </td>
-                    <td className="num">
-                      {/* A deduction is not money coming IN — painting it green read as
-                          earnings. It is an adjustment, so it stays neutral. */}
-                      <span className={payment.kind === 'deduction' ? 'cell-muted' : 'amount-out'}>
-                        {payment.kind === 'deduction' ? '−' : ''}{rupees(payment.amount)}
-                      </span>
-                    </td>
-                    <td className="tight">
-                      <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
-                        <button type="button" className="icon-btn danger" data-tip={t('common.delete')} onClick={() => removePayment(payment)}>
-                          <TrashIcon size={17} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {payments.map((payment) => {
+                  const isCarry = CARRY.includes(payment.kind);
+                  return (
+                    <tr key={payment.id}>
+                      <td className="cell-muted">{formatDate(payment.date, lang)}</td>
+                      <td>
+                        <div className="cell-stack">
+                          <span className="cell-strong">{payment.staffName || '—'}</span>
+                          {payment.note && <span className="cell-sub">{payment.note}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="cell-stack">
+                          <span className={`badge ${KIND_BADGE[payment.kind] || 'badge-inactive'}`}>
+                            {t(KIND_LABEL[payment.kind] || 'staff.entryKind')}
+                          </span>
+                          {MOVES_MONEY.includes(payment.kind) && payment.paymentMode && (
+                            <span className="cell-sub">{t(`expenses.mode.${payment.paymentMode}`)}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="num">
+                        {/* A deduction is not money coming IN — painting it green read as
+                            earnings. It is an adjustment, so it stays neutral. */}
+                        <span className={payment.kind === 'deduction' || isCarry ? 'cell-muted' : 'amount-out'}>
+                          {payment.kind === 'deduction' ? `−${rupees(payment.amount)}` : signedRupees(payment.amount)}
+                        </span>
+                      </td>
+                      <td className="tight">
+                        <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+                          {!isCarry && (
+                            <button type="button" className="icon-btn" data-tip={t('common.edit')} onClick={() => openEdit(payment)}>
+                              <EditIcon size={17} />
+                            </button>
+                          )}
+                          <button type="button" className="icon-btn danger" data-tip={t('common.delete')} onClick={() => removePayment(payment)}>
+                            <TrashIcon size={17} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -420,8 +635,8 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
           as="form"
           onSubmit={submitEntry}
           onClose={() => setEntry(null)}
-          title={t('staff.paymentFor', { kind: t(KIND_LABEL[entry.kind]), name: entry.name })}
-          hint={`${t('staff.period')}: ${month}`}
+          title={t(isEditing ? 'staff.paymentEditFor' : 'staff.paymentFor', { kind: t(KIND_LABEL[entry.kind]), name: entry.name })}
+          hint={`${t('staff.period')}: ${monthLabel(month)}`}
           maxWidth={460}
           footer={
             <>
@@ -434,24 +649,26 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
             </>
           }
         >
-
-
               <div className="form-grid cols-2">
-                <div className="field field-span2">
-                  <label>{t('staff.entryKind')}</label>
-                  <div className="segmented" role="group">
-                    {KINDS.map((kind) => (
-                      <button
-                        type="button"
-                        key={kind}
-                        className={entry.kind === kind ? 'active' : undefined}
-                        onClick={() => setEntry((e) => ({ ...e, kind }))}
-                      >
-                        {t(KIND_LABEL[kind])}
-                      </button>
-                    ))}
+                {/* The kind is the one thing an edit cannot change: a pagaar turned into a
+                    bonus is a different fact, and is a delete and a new entry. */}
+                {!isEditing && (
+                  <div className="field field-span2">
+                    <label>{t('staff.entryKind')}</label>
+                    <div className="segmented" role="group">
+                      {KINDS.map((kind) => (
+                        <button
+                          type="button"
+                          key={kind}
+                          className={entry.kind === kind ? 'active' : undefined}
+                          onClick={() => setEntry((e) => ({ ...e, kind }))}
+                        >
+                          {t(KIND_LABEL[kind])}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="field">
                   <label htmlFor="payAmount">{t('staff.amount')}</label>
@@ -460,7 +677,8 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                     <input
                       id="payAmount"
                       type="number"
-                      min="0"
+                      inputMode="decimal"
+                      min="0.01"
                       step="0.01"
                       value={entry.amount}
                       onChange={(e) => setEntry((v) => ({ ...v, amount: e.target.value }))}
@@ -468,6 +686,18 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                       autoFocus
                     />
                   </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="payDate">{MOVES_MONEY.includes(entry.kind) ? t('staff.paidOn') : t('expenses.date')}</label>
+                  <input
+                    id="payDate"
+                    type="date"
+                    value={entry.date}
+                    max={todayKey()}
+                    onChange={(e) => setEntry((v) => ({ ...v, date: e.target.value }))}
+                    required
+                  />
                 </div>
 
                 {MOVES_MONEY.includes(entry.kind) && (
@@ -491,6 +721,7 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
                   <input
                     id="payNote"
                     value={entry.note}
+                    maxLength={300}
                     onChange={(e) => setEntry((v) => ({ ...v, note: e.target.value }))}
                   />
                 </div>
@@ -499,9 +730,10 @@ export default function StaffPayroll({ staff, month, onMonthChange }) {
               {/* Says what pressing this will actually do to the books, before it does it. */}
               <p className="field-hint" style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
                 <InfoIcon size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
-                {MOVES_MONEY.includes(entry.kind) ? t('staff.writesToKharcha') : t('staff.adjustOnly')}
+                {MOVES_MONEY.includes(entry.kind)
+                  ? (isEditing ? t('staff.editMovesKharcha') : t('staff.writesToKharcha'))
+                  : t('staff.adjustOnly')}
               </p>
-
         </Modal>
       )}
     </div>

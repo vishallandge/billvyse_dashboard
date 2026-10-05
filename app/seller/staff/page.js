@@ -21,6 +21,7 @@ import StaffAttendance from '../../components/StaffAttendance';
 import StaffPayroll from '../../components/StaffPayroll';
 import StaffHandover from '../../components/StaffHandover';
 import { suggestPassword } from '../../../lib/passwordSuggest';
+import { formatDate } from '../../../lib/format';
 import Dropdown from '../../components/Dropdown';
 import PhoneField from '../../components/PhoneField';
 import Modal from '../../components/Modal';
@@ -75,7 +76,14 @@ const emptyForm = {
   salary: '',
   permissions: [],
   storeId: '',
+  joinedOn: '',
+  leftOn: '',
 };
+
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
 
 function currentMonth() {
   const now = new Date();
@@ -290,6 +298,8 @@ export default function StaffPage() {
       permissions: [...(member.permissions || [])],
       storeId: stillOpen ? member.store : '',
       phone: member.phone || '',
+      joinedOn: member.joinedOn || '',
+      leftOn: member.leftOn || '',
     });
     setHandover(null);
     setEditingId(member.id);
@@ -316,6 +326,8 @@ export default function StaffPage() {
         // A blank password means "leave it alone". The email goes along: it can be corrected
         // now, and the server only acts on it when it actually differs.
         if (!body.password) delete body.password;
+        // Only somebody who has left has a last working day to correct.
+        if (!body.leftOn || staff.find((s) => s.id === editingId)?.isActive) delete body.leftOn;
         const before = staff.find((s) => s.id === editingId);
         const emailChanged = Boolean(before) && (before.email || '').toLowerCase() !== form.email.trim().toLowerCase();
         await apiFetch(`/api/seller/staff/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
@@ -331,6 +343,7 @@ export default function StaffPage() {
           closeForm();
         }
       } else {
+        delete payload.leftOn;
         await apiFetch('/api/seller/staff', { method: 'POST', body: JSON.stringify(payload) });
         toast.success(t('seller.staffCreated'));
         setHandover({ name: form.name, email: form.email, password: form.password, phone: form.phone });
@@ -352,7 +365,7 @@ export default function StaffPage() {
       });
       load();
     } catch (err) {
-      toast.error(err.message);
+      toast.error(apiErrorMessage(lang, err));
     }
   }
 
@@ -391,7 +404,7 @@ export default function StaffPage() {
       }
       load();
     } catch (err) {
-      toast.error(err.message);
+      toast.error(apiErrorMessage(lang, err));
     }
   }
 
@@ -519,9 +532,17 @@ export default function StaffPage() {
                       </div>
                     </td>
                     <td>
-                      <span className={`badge ${s.isActive ? 'badge-active' : 'badge-inactive'}`}>
-                        {s.isActive ? t('common.active') : t('common.inactive')}
-                      </span>
+                      <div className="cell-stack">
+                        <span className={`badge ${s.isActive ? 'badge-active' : 'badge-inactive'}`}>
+                          {s.isActive ? t('common.active') : t('common.inactive')}
+                        </span>
+                        {!s.isActive && s.leftOn && (
+                          <span className="cell-sub">{t('staff.leftOnShort', { date: formatDate(s.leftOn, lang) })}</span>
+                        )}
+                        {s.isActive && s.joinedOn && (
+                          <span className="cell-sub">{t('staff.joinedOnShort', { date: formatDate(s.joinedOn, lang) })}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="tight">
                       <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
@@ -842,6 +863,28 @@ export default function StaffPage() {
                     <label htmlFor="staffCounter">{t('seller.staffCounter')}</label>
                     <input id="staffCounter" value={form.counterName} onChange={update('counterName')} placeholder="Counter 1" />
                   </div>
+                  {/* Optional on purpose: blank means "has been here all along", so adding
+                      an old hand never pro-rates anybody. Set, it is what stops the sheet
+                      asking for pagaar for months before they were hired. */}
+                  <div className="field">
+                    <label htmlFor="staffJoined">{t('staff.joinedOn')}</label>
+                    <input id="staffJoined" type="date" value={form.joinedOn} onChange={update('joinedOn')} />
+                    <p className="field-hint">{t('staff.joinedOnHint')}</p>
+                  </div>
+                  {editingId && staff.find((m) => m.id === editingId)?.isActive === false && (
+                    <div className="field">
+                      <label htmlFor="staffLeft">{t('staff.leftOn')}</label>
+                      <input
+                        id="staffLeft"
+                        type="date"
+                        value={form.leftOn}
+                        min={form.joinedOn || undefined}
+                        max={todayKey()}
+                        onChange={update('leftOn')}
+                      />
+                      <p className="field-hint">{t('staff.leftOnHint')}</p>
+                    </div>
+                  )}
                   {assignableStores.length > 1 && (
                     <div className="field">
                       <label>{t('seller.assignedStore')}</label>

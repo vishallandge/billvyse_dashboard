@@ -517,7 +517,7 @@ export function FloorTableCard({
               <span key={o._id} className={`ftile__group tone-${legendKey(st.key)}${st.late ? ' is-late' : ''}`}>
                 <span className={`gchip g-${i % 5}`}>{groupLetter(o, i)}</span>
                 <span className="ftile__group-text">{t(`tables.visual.stage.${legendKey(st.key)}`)}</span>
-                {o.subtotal > 0 && <strong>{formatRupees(o.subtotal, lang)}</strong>}
+                {(o.toPay ?? o.subtotal) > 0 && <strong>{formatRupees(o.toPay ?? o.subtotal, lang)}</strong>}
               </span>
             );
           })}
@@ -531,7 +531,9 @@ export function FloorTableCard({
           {order && !joinedTo && (
             <span className="ftile__foot">
               {/* Nothing ordered yet has no bill to show — a ₹0.00 there is just noise. */}
-              {order.subtotal > 0 && <strong>{formatRupees(order.subtotal, lang)}</strong>}
+              {/* What the bill will say (dishes + section/parcel charge, rounded) — see
+                  toPayById in the page. */}
+              {(order.toPay ?? order.subtotal) > 0 && <strong>{formatRupees(order.toPay ?? order.subtotal, lang)}</strong>}
               <span className="ftile__time">
                 <ClockIcon size={11} /> {formatMinutes(minutesSinceOpen(order, now))}
               </span>
@@ -577,7 +579,7 @@ export function GroupPicker({ table, orders, stagesByOrder, seatInfo, onPick, on
                 <span>{nextActionText(st, t)}</span>
               </span>
               <span className="gpick__money">
-                {o.subtotal > 0 && <strong>{formatRupees(o.subtotal, lang)}</strong>}
+                {(o.toPay ?? o.subtotal) > 0 && <strong>{formatRupees(o.toPay ?? o.subtotal, lang)}</strong>}
                 <small><ClockIcon size={11} /> {formatMinutes(minutesSinceOpen(o, now))}</small>
               </span>
               <ChevronRightIcon size={16} />
@@ -833,7 +835,7 @@ export function FloorMap({ entries, onOpen, stageFilter, t, lang, editable = fal
           const shared = orders.length > 1;
           const order = orders[0] || null;
           const dimmed = !editable && !!stageFilter && tone !== stageFilter;
-          const owed = orders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
+          const owed = orders.reduce((sum, o) => sum + (o.toPay ?? o.subtotal ?? 0), 0);
           const status = joinedOrder
             ? t('tables.visual.joined')
             : shared

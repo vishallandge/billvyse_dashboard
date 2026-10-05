@@ -13,11 +13,14 @@ const ease = (t) => 1 - Math.pow(1 - t, 3);
  * Motion is skipped entirely for users who ask for reduced motion, and for the very
  * first paint after a re-login (from 0 the count-up is the point, so that one animates).
  */
-export default function AnimatedNumber({ value, prefix = '', suffix = '', decimals = true, duration = DURATION_MS }) {
+export default function AnimatedNumber({ value, prefix = '', suffix = '', decimals = true, duration = DURATION_MS, from }) {
   const { lang } = useLanguage();
   const target = Number(value) || 0;
-  const [shown, setShown] = useState(target);
-  const fromRef = useRef(target);
+  // `from` lets a hero figure count up on its very first paint (Munafa card counts from
+  // zero); everywhere else the first paint is the figure itself.
+  const start0 = Number.isFinite(from) ? from : target;
+  const [shown, setShown] = useState(start0);
+  const fromRef = useRef(start0);
   const frameRef = useRef(null);
 
   useEffect(() => {

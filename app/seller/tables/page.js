@@ -513,6 +513,47 @@ export default function TablesPage() {
   }, [floorTables]);
 
   const zoneConfig = useMemo(() => new Map(zoneSettings.map((z) => [z.name, z])), [zoneSettings]);
+
+  /**
+   * What each running table will actually be billed: its dishes, plus its section charge
+   * (AC 10%) or its parcel/delivery charge, rounded the way this shop rounds — the same
+   * arithmetic the ticket and the saved bill use.
+   *
+   * Tiles and the floor's running total used to add up the dishes alone, so a table read
+   * ₹500 on the floor and printed ₹550 on the bill — "table mein alag, bill mein alag",
+   * which is exactly the kind of gap that costs an owner's trust. A bill discount is not
+   * known until the bill is made, so it is the one thing not in here.
+   */
+  const toPayById = useMemo(() => {
+    const roundOn = user?.billingSettings?.roundOff !== false;
+    const map = new Map();
+    for (const o of orders) {
+      const lines = (o.items || []).map((item) => ({ item, quantity: item.quantity }));
+      let extra = 0;
+      if (o.orderType === 'dine_in') {
+        const zone = o.table ? floorTables.find((tb) => String(tb._id) === String(o.table))?.zone || 'Main' : null;
+        const pct = zone ? zoneConfig.get(zone)?.chargePercent || 0 : 0;
+        if (pct > 0) extra = sectionCharge(lines, pct).amount;
+      } else {
+        const flat = takeawayCharge(o.orderType, takeawaySettings, lines);
+        if (flat && !flat.free) extra = Number(flat.amount) || 0;
+      }
+      const money = billMoney({
+        lines: [
+          ...lines.map(({ item, quantity }) => ({ price: item.price, quantity })),
+          ...(extra > 0 ? [{ price: extra, quantity: 1 }] : []),
+        ],
+        roundOff: roundOn,
+      });
+      map.set(o._id, money.payable);
+    }
+    return map;
+  }, [orders, floorTables, zoneConfig, takeawaySettings, user]);
+  // The orders the floor DRAWS, each carrying `toPay`. Everything else keeps `orders`.
+  const pricedOrders = useMemo(
+    () => orders.map((o) => ({ ...o, toPay: toPayById.has(o._id) ? toPayById.get(o._id) : o.subtotal })),
+    [orders, toPayById]
+  );
   function chargeLabelFor(zone) {
     const cfg = zoneConfig.get(zone);
     return cfg?.chargeLabel || t('tables.sectionChargeDefault', { zone });
@@ -594,7 +635,8 @@ export default function TablesPage() {
         reserved += 1;
       }
     }
-    const running = orders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
+    // What the running tables will be BILLED, not just their dishes — see toPayById.
+    const running = pricedOrders.reduce((sum, o) => sum + (o.toPay || 0), 0);
     const awaitingKitchen = orders.reduce((sum, o) => sum + (o.pendingItemCount || 0), 0);
     // Already with the kitchen and not yet served — what the Kitchen link's badge shows.
     // Distinct from awaitingKitchen above, which is "typed but not fired yet".
@@ -610,7 +652,7 @@ export default function TablesPage() {
       awaitingKitchen,
       onFire,
     };
-  }, [floorTables, orderByTableId, orders]);
+  }, [floorTables, orderByTableId, orders, pricedOrders]);
 
   // Every table's stage, read once per render so the tiles, the legend counts and the
   // "do this now" strip can never disagree with each other.
@@ -618,7 +660,7 @@ export default function TablesPage() {
   // more when strangers share it. A table pushed onto another party is tracked separately.
   const ordersByTable = useMemo(() => {
     const map = new Map();
-    for (const o of orders) {
+    for (const o of pricedOrders) {
       if (!o.table || o.orderType !== 'dine_in') continue;
       const key = String(o.table);
       if (!map.has(key)) map.set(key, []);
@@ -628,7 +670,7 @@ export default function TablesPage() {
       list.sort((a, b) => String(a.groupLabel || 'A').localeCompare(String(b.groupLabel || 'A')) || new Date(a.createdAt) - new Date(b.createdAt));
     }
     return map;
-  }, [orders]);
+  }, [pricedOrders]);
 
   const stagesByOrder = useMemo(() => {
     const map = new Map();
@@ -1156,11 +1198,24 @@ export default function TablesPage() {
       return;
     }
     let reason = '';
+    // Money leaving the table is always asked about — including a dish that never reached
+    // the kitchen, which used to vanish on one tap. The popup says the amount and that the
+    // line stays on the ticket, struck through, with the person's name.
+    if (stage === 'unsent') {
+      const ok = await confirm({
+        tone: 'warning',
+        title: t('tables.removeTitle', { name: item.name }),
+        body: `${t('tables.removeBody', { value: formatRupees(lineTotal(item), lang) })} ${t('tables.removedNote')}`,
+        confirmLabel: t('tables.removeAction'),
+        cancelLabel: t('common.goBack'),
+      });
+      if (!ok) return;
+    }
     if (stage !== 'unsent') {
       const answer = await confirm({
         tone: stage === 'made' ? 'danger' : 'warning',
         title: t(`tables.change.${stage}Title`, { name: item.name }),
-        body: t(`tables.change.${stage}Body`, { name: item.name, value: formatRupees(lineTotal(item), lang) }),
+        body: `${t(`tables.change.${stage}Body`, { name: item.name, value: formatRupees(lineTotal(item), lang) })} ${t('tables.removedNote')}`,
         input: { label: t('tables.voidReasonPrompt'), placeholder: t('tables.voidReasonPlaceholder') },
         confirmLabel: t(`tables.change.${stage}Action`),
         cancelLabel: t('common.goBack'),
@@ -1361,6 +1416,13 @@ export default function TablesPage() {
     return false;
   }
 
+  // "2 × Naan (₹80) were added after the bill — still on the table, bill them."
+  function leftoverText(leftover) {
+    const what = leftover.map((l) => `${l.quantity} × ${l.name}`).join(', ');
+    const amount = leftover.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+    return t('tables.leftoverAfterBill', { items: what, amount: formatRupees(amount, lang) });
+  }
+
   async function handleSettle() {
     if (!active || active.items.length === 0) return;
     if (discountInvalid()) {
@@ -1402,10 +1464,17 @@ export default function TablesPage() {
           billDiscount: !Number(billDiscountPercent) && Number(billDiscountAmount) ? Number(billDiscountAmount) : undefined,
         }),
       });
-      await apiFetch(`/api/seller/table-orders/${active._id}/settle`, {
+      const settled = await apiFetch(`/api/seller/table-orders/${active._id}/settle`, {
         method: 'POST',
         body: JSON.stringify({ billId: billData.bill._id }),
       });
+      // Something was added to the table after this bill was made. The bill is paid, the
+      // extra stays open on the table — say exactly what, so it gets billed, never lost.
+      if (settled?.leftover?.length) {
+        toast.error(leftoverText(settled.leftover));
+        await Promise.all([load(), loadFloorTables()]);
+        return;
+      }
       toast.success(t('tables.settled', { table: active.tableLabel || active.tableName, number: billData.bill.billNumber }));
       setSplitSettledReceipts([]);
       showSettled({ bill: billData.bill, customer: customerById(settleCustomerId) });
@@ -1626,10 +1695,15 @@ export default function TablesPage() {
         createdBills.push(billData.bill);
         billCustomers.push(customerById(guestCustomers[g.index]));
       }
-      await apiFetch(`/api/seller/table-orders/${active._id}/settle`, {
+      const settled = await apiFetch(`/api/seller/table-orders/${active._id}/settle`, {
         method: 'POST',
         body: JSON.stringify({ billIds: createdBills.map((b) => b._id) }),
       });
+      if (settled?.leftover?.length) {
+        toast.error(leftoverText(settled.leftover));
+        await Promise.all([load(), loadFloorTables()]);
+        return;
+      }
       toast.success(t('tables.splitSettled', { table: active.tableLabel || active.tableName, count: createdBills.length }));
       setSettledReceipt(null);
       setSplitSettledReceipts(createdBills.map((bill, i) => ({ bill, customer: billCustomers[i] })));
@@ -2088,7 +2162,7 @@ export default function TablesPage() {
                   >
                     <span className={`gchip g-${i % 5}`}>{groupLetter(o, i)}</span>
                     <span>{o.customerName || t('tables.visual.groupName', { letter: groupLetter(o, i) })}</span>
-                    {o.subtotal > 0 && <strong>{formatRupees(o.subtotal, lang)}</strong>}
+                    {(o.toPay ?? o.subtotal) > 0 && <strong>{formatRupees(o.toPay ?? o.subtotal, lang)}</strong>}
                   </button>
                 ))}
                 {info.free > 0 && (
@@ -2442,6 +2516,32 @@ export default function TablesPage() {
                         </div>
                       ))}
                       </Fragment>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* What was taken off this table before billing — struck through, in red,
+                      with the amount, who and when. The table total and the bill can then
+                      never disagree without the difference being right here on the ticket. */}
+                  {active.removedItems?.length > 0 && (
+                    <div className="ticket-removed">
+                      <p className="ticket-removed-title">
+                        {t('tables.removedTitle', { amount: formatRupees(active.removedTotal || 0, lang) })}
+                      </p>
+                      {active.removedItems.map((r, i) => (
+                        <div className="ticket-removed-line" key={`${r.at}-${i}`}>
+                          <span className="ticket-removed-what">
+                            {r.name} × {r.quantity}
+                          </span>
+                          <span className="ticket-removed-amount">{formatRupees(r.amount || 0, lang)}</span>
+                          <span className="ticket-removed-who">
+                            {t(r.kind === 'reduced' ? 'tables.reducedBy' : 'tables.removedBy', {
+                              name: r.byName || '—',
+                              time: r.at ? new Date(r.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '',
+                            })}
+                            {r.reason ? ` · ${r.reason}` : ''}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -2960,6 +3060,14 @@ export default function TablesPage() {
                 <KitchenIcon size={17} /> {t('nav.kitchen')}
                 {floorStats.onFire > 0 && <span className="link-count">{floorStats.onFire}</span>}
               </Link>
+              {/* The raw stock the floor runs on — how much paneer is left, how long it
+                  lasts. Lived only behind a button on the Products page, where an owner on
+                  the floor never went. */}
+              {!hiddenNav.includes('inventory') && (user?.role !== 'staff' || user?.permissions?.includes('inventory')) && (
+                <Link href="/seller/products?view=kitchen" className="btn btn-secondary btn-inline">
+                  <LayersIcon size={17} /> {t('kitchenStock.open')}
+                </Link>
+              )}
               {/* Every settled bill — table, takeaway or counter — is in the one register;
                   this lands on it rather than on the empty counter above it. */}
               {canSeeBills && (

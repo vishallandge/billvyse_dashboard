@@ -21,6 +21,8 @@ const KIND_LABEL = {
   advance: 'staff.kindAdvance',
   bonus: 'staff.kindBonus',
   deduction: 'staff.kindDeduction',
+  carryIn: 'staff.kindCarryIn',
+  carryOut: 'staff.kindCarryOut',
 };
 
 function currentMonth() {
@@ -30,6 +32,11 @@ function currentMonth() {
 
 function rupees(n) {
   return `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+function signedRupees(n) {
+  const value = Number(n) || 0;
+  return value < 0 ? `−${rupees(-value)}` : rupees(value);
 }
 
 function formatTime(value) {
@@ -93,9 +100,13 @@ export default function MyWorkPage() {
             {/* Only ever the one figure. A screen that opens with six numbers has not
                 answered anything. */}
             <div className="mywork-hero">
-              <div className="mywork-hero-value">{rupees(Math.max(me.payable, 0))}</div>
+              <div className="mywork-hero-value">{rupees(Math.abs(me.payable) >= 0.5 ? Math.abs(me.payable) : 0)}</div>
               <div className="mywork-hero-label">
-                {me.payable > 0 ? t('staff.myPayableNote') : t('staff.settled')}
+                {me.payable >= 0.5
+                  ? t('staff.myPayableNote')
+                  : me.payable <= -0.5
+                    ? t('staff.myPaidAheadNote')
+                    : t('staff.settled')}
               </div>
             </div>
 
@@ -113,7 +124,7 @@ export default function MyWorkPage() {
               {/* A calendar, not a warning triangle: days off are a fact of a month, not
                   a problem with it, and this screen belongs to the person who took them. */}
               <div className="stat-icon"><CalendarIcon size={16} /></div>
-              <div className="stat-value">{me.absent + me.leave}</div>
+              <div className="stat-value">{me.absent + me.leave + (me.halfDay ? me.halfDay / 2 : 0)}</div>
               <div className="stat-label">{t('staff.absent')} + {t('staff.leave')}</div>
             </div>
             <div className="stat-card">
@@ -129,9 +140,22 @@ export default function MyWorkPage() {
               <h2>{t('staff.myPayTitle')}</h2>
             </div>
 
-            {me.salary > 0 && (
+            {/* A statement, not a summary: read top to bottom, every line is one term of
+                the same sum the owner's sheet uses, and the last line is that sum. */}
+            {me.previous ? (
               <div className="mywork-line">
-                <span className="mywork-line-label">{t('staff.salary')}</span>
+                <span className="mywork-line-label">{t('staff.previousBalance')}</span>
+                <span className="mywork-line-value">{signedRupees(me.previous)}</span>
+              </div>
+            ) : null}
+            {me.monthlySalary > 0 && (
+              <div className="mywork-line">
+                <span className="mywork-line-label">
+                  {t('staff.salary')}
+                  {me.salaryProrated
+                    ? ` · ${t('staff.proratedDays', { days: me.employedDays, total: data.daysInMonth, full: rupees(me.monthlySalary) })}`
+                    : ''}
+                </span>
                 <span className="mywork-line-value">{rupees(me.salary)}</span>
               </div>
             )}
@@ -159,12 +183,28 @@ export default function MyWorkPage() {
               <span className="mywork-line-label"><strong>{t('staff.earned')}</strong></span>
               <span className="mywork-line-value">{rupees(me.earned)}</span>
             </div>
+            {me.salaryPaid > 0 && (
+              <div className="mywork-line">
+                <span className="mywork-line-label">{t('staff.myPagaarTaken')}</span>
+                <span className="mywork-line-value">−{rupees(me.salaryPaid)}</span>
+              </div>
+            )}
             {me.advance > 0 && (
               <div className="mywork-line">
                 <span className="mywork-line-label">{t('staff.myAdvanceNote')}</span>
                 <span className="mywork-line-value">−{rupees(me.advance)}</span>
               </div>
             )}
+            {me.carriedForward ? (
+              <div className="mywork-line">
+                <span className="mywork-line-label">{t('staff.kindCarryOut')}</span>
+                <span className="mywork-line-value">{signedRupees(-me.carriedForward)}</span>
+              </div>
+            ) : null}
+            <div className="mywork-line">
+              <span className="mywork-line-label"><strong>{t('staff.payable')}</strong></span>
+              <span className="mywork-line-value"><strong>{signedRupees(me.payable)}</strong></span>
+            </div>
           </div>
 
           <div className="panel">
@@ -190,11 +230,11 @@ export default function MyWorkPage() {
                         <td className="cell-muted">{formatDate(payment.date, lang)}</td>
                         <td>
                           <div className="cell-stack">
-                            <span className="badge badge-pending">{t(KIND_LABEL[payment.kind])}</span>
+                            <span className="badge badge-pending">{t(KIND_LABEL[payment.kind] || 'staff.entryKind')}</span>
                             {payment.note && <span className="cell-sub">{payment.note}</span>}
                           </div>
                         </td>
-                        <td className="num">{rupees(payment.amount)}</td>
+                        <td className="num">{payment.kind === 'deduction' ? `−${rupees(payment.amount)}` : signedRupees(payment.amount)}</td>
                       </tr>
                     ))}
                   </tbody>

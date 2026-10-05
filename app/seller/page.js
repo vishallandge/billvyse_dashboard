@@ -12,12 +12,13 @@ import { formatNumber } from '../../lib/hindiNumerals';
 import { formatMoney } from '../../lib/format';
 import AnimatedNumber from '../components/AnimatedNumber';
 import WhatsappSheet from '../components/WhatsappSheet';
-import { RupeeIcon, ReceiptIcon, LedgerIcon, AlertIcon, ClockIcon, PackageIcon, StarIcon, CalendarIcon, CopyIcon, XIcon, RefreshIcon, ChevronRightIcon, TrendUpIcon, TrendDownIcon, WalletIcon, WhatsappIcon, BookIcon, BarChartIcon } from '../components/Icons';
+import { RupeeIcon, ReceiptIcon, LedgerIcon, AlertIcon, ClockIcon, PackageIcon, StarIcon, CalendarIcon, CopyIcon, XIcon, ChevronRightIcon, TrendUpIcon, TrendDownIcon, WalletIcon, BarChartIcon } from '../components/Icons';
 import { SkeletonStats, SkeletonCards } from '../components/Skeleton';
 import GreetingHero from '../components/GreetingHero';
 import MunafaCard from '../components/MunafaCard';
 import QuickActions from '../components/QuickActions';
 import GrowthSlot from '../components/CampaignCard';
+import TodaySummary from '../components/TodaySummary';
 import GettingStarted from '../components/GettingStarted';
 import BusinessReadiness from '../components/BusinessReadiness';
 
@@ -36,9 +37,6 @@ export default function SellerOverviewPage() {
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [hisaab, setHisaab] = useState(null);
-  const [hisaabLoading, setHisaabLoading] = useState(false);
-  const [hisaabError, setHisaabError] = useState('');
   // The open WhatsApp send sheet, or null. See components/WhatsappSheet.js.
   const [waSheet, setWaSheet] = useState(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -118,19 +116,6 @@ export default function SellerOverviewPage() {
       short: `${percent}%`,
     };
   }
-
-  function loadHisaab() {
-    setHisaabError('');
-    setHisaabLoading(true);
-    apiFetch('/api/seller/hisaab/today')
-      .then(setHisaab)
-      .catch((err) => setHisaabError(err.message))
-      .finally(() => setHisaabLoading(false));
-  }
-
-  // Every other card on this page loads itself — the day's own Hisaab used to be the one
-  // thing that made the shopkeeper ask for it first with a button tap.
-  useEffect(loadHisaab, []);
 
   // Which cards this shop actually gets. The server decides (see backend/utils/shopLens.js)
   // from the shop's real data as well as its declared type, so a salon opens on its
@@ -273,159 +258,7 @@ export default function SellerOverviewPage() {
       <div className="ov-cols">
         <div className="ov-main">
 
-        <div className="panel ov-hisaab">
-          {/* The section heading lives inside the panel now: a full-width heading over a
-              half-width card points at the card beside it as much as at its own. */}
-          <div className="panel-topline">
-            {/* Every heading on this page is set in the same weight at the same size, so
-                a shopkeeper scrolling it has nothing to aim at — he reads three headings
-                to find the one he wanted. The glyph is what he actually aims at, and it
-                carries the module's colour (lib/moduleTones.js) so the mark for the day's
-                record is the same indigo here, in the sidebar and on the Roznamcha page
-                this panel is a summary of. A bare glyph and no chip: a box around it
-                would out-weigh the words it introduces. */}
-            <h2>
-              <span className="section-title-icon mod-tone-8"><BookIcon size={16} /></span>
-              {t('seller.hisaabTitle')}
-            </h2>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={loadHisaab}
-              disabled={hisaabLoading}
-              aria-label={t('common.refresh')}
-              data-tip={t('common.refresh')}
-            >
-              <RefreshIcon size={17} />
-            </button>
-          </div>
-          {hisaabError && <div className="error-banner">{hisaabError}</div>}
-
-        {/* Four, matching the four payment-mode tiles this panel now renders — a
-            five-card skeleton followed by a four-tile answer is a visible jump. */}
-        {hisaabLoading && !hisaab ? (
-          <SkeletonStats count={4} />
-        ) : hisaab && (
-          <div>
-            {/* This panel used to open with five stat cards — bills, sales, profit, udhaar
-                given, udhaar recovered — and the Overview grid a few hundred pixels below
-                repeated all five, same numbers, same day, twice on one screen. Whichever
-                one a shopkeeper read second taught them that half this page is filler.
-                The Overview grid keeps them (it has the icons, the drill-through links and
-                the alert states); this panel answers only the question nothing else on the
-                page answers: of today's money, how much came in by which mode.
-
-                Rebuilt 2026-08-12. Four equal tiles floating in a wide box gave every mode
-                the same visual weight and never answered the question the shopkeeper
-                actually walks over to this panel with, which is not "how much UPI" — it is
-                "kitna cash golak mein hona chahiye". So the two figures that matter are
-                stated first and separately:
-
-                  COLLECTED  = cash + UPI + card. Money that actually arrived.
-                  ON KHATA   = billed, not collected. This is udhaar, and adding it to the
-                               figure above would be the single most expensive lie the
-                               dashboard could tell — it is the number that makes a shop
-                               think it had a good day when it gave one away.
-
-                The bar underneath is the mix, at a glance. It is the same four numbers,
-                but proportion is a thing the eye reads instantly and a column of rupee
-                amounts is not. */}
-            {(() => {
-              const modes = hisaab.summary.paymentBreakdown;
-              const collected = (modes.cash || 0) + (modes.upi || 0) + (modes.card || 0);
-              const onKhata = modes.khata || 0;
-              const total = collected + onKhata;
-              const rows = [
-                { key: 'cash', label: t('seller.cash'), value: modes.cash || 0, tone: 'cash' },
-                { key: 'upi', label: t('seller.upi'), value: modes.upi || 0, tone: 'upi' },
-                { key: 'card', label: t('seller.card'), value: modes.card || 0, tone: 'card' },
-                { key: 'khata', label: t('seller.khataMode'), value: onKhata, tone: 'khata' },
-              ];
-              // A shop that has billed nothing yet today gets the tiles at zero and no
-              // bar — a 0%-wide stacked bar renders as an empty trough that looks broken.
-              const share = (value) => (total > 0 ? (value / total) * 100 : 0);
-
-              return (
-                <>
-                  <div className="hisaab-head">
-                    <div className="hisaab-headline">
-                      <span className="hisaab-headline-label">{t('seller.hisaabCollected')}</span>
-                      <strong className="hisaab-headline-value">₹{money(collected)}</strong>
-                      <span className="hisaab-headline-note">{t('seller.hisaabSubtitle')}</span>
-                    </div>
-                    {onKhata > 0 && (
-                      <div className="hisaab-khata">
-                        <span className="hisaab-khata-label">{t('seller.hisaabOnKhata')}</span>
-                        <strong>₹{money(onKhata)}</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  {total > 0 && (
-                    <div className="hisaab-bar" role="img" aria-label={t('seller.hisaabCollected')}>
-                      {rows
-                        .filter((row) => row.value > 0)
-                        .map((row) => (
-                          <span
-                            key={row.key}
-                            className={`hisaab-bar-seg hisaab-seg-${row.tone}`}
-                            style={{ width: `${share(row.value)}%` }}
-                            data-tip={`${row.label} · ₹${money(row.value)}`}
-                          />
-                        ))}
-                    </div>
-                  )}
-
-                  <div className="pay-split">
-                    {rows.map((row) => (
-                      <div key={row.key} className={`pay-split-item${row.key === 'khata' ? ' is-khata' : ''}`}>
-                        <span className="pay-split-label">
-                          <span className={`hisaab-dot hisaab-seg-${row.tone}`} aria-hidden="true" />
-                          {row.label}
-                        </span>
-                        <strong>₹{money(row.value)}</strong>
-                        {total > 0 && <span className="pay-split-share">{Math.round(share(row.value))}%</span>}
-                      </div>
-                    ))}
-                    {/* Money that went back over the counter today. The mode figures above
-                        are already net of it — this tile exists so "golak mein kam kyun
-                        hai" has an answer on the same screen as the shortfall, instead of
-                        the shopkeeper counting the drawer and finding nothing that
-                        explains it. */}
-                    {hisaab.summary.refunds?.total > 0 && (
-                      <div className="pay-split-item is-refund">
-                        <span className="pay-split-label">{t('seller.hisaabRefunds')}</span>
-                        <strong>−₹{money(hisaab.summary.refunds.total)}</strong>
-                      </div>
-                    )}
-                  </div>
-                </>
-              );
-            })()}
-
-            {hisaab.whatsappLink && (
-              <div className="row-actions" style={{ marginTop: '0.75rem' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={() =>
-                    setWaSheet({
-                      title: t('wa.shareHisaab'),
-                      message: hisaab.whatsappText,
-                      link: hisaab.whatsappLink,
-                      // The day's figures go to a partner, an accountant, the owner's own
-                      // saved messages — there is no customer here and never was.
-                      auto: false,
-                    })
-                  }
-                >
-                  <WhatsappIcon size={17} /> {t('seller.shareWhatsapp')}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        </div>
+        <TodaySummary onShare={({ message, link }) => setWaSheet({ title: t('wa.shareHisaab'), message, link, auto: false })} />
 
         {statsLoading && <SkeletonStats count={5} />}
 

@@ -797,11 +797,23 @@ export default function DashboardShell({ role, navItems, children }) {
       refreshNotifications();
     }
 
+    // An item just crossed its alert level (or ran out) on a bill, a count or a batch —
+    // said on whatever screen is open, and the bell recounted, the same moment the
+    // phone notification goes out (utils/lowStockAlert.js).
+    function onStockLow(payload) {
+      const unit = t(`units.${payload.unit}`);
+      if (payload.out) toast.error(t('notifications.stockOutToast', { name: payload.name }));
+      else toast.info(t('notifications.stockLowToast', { name: payload.name, left: payload.left, unit }));
+      refreshNotifications();
+    }
+
     socket.on('paymentClaim:new', onClaim);
     socket.on('paymentPromise:new', onPromise);
+    socket.on('stock:low', onStockLow);
     return () => {
       socket.off('paymentClaim:new', onClaim);
       socket.off('paymentPromise:new', onPromise);
+      socket.off('stock:low', onStockLow);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);

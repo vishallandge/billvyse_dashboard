@@ -46,6 +46,9 @@ import StockTake from '../../components/StockTake';
 import { syncStockTakeQueue, stockTakeQueueCount } from '../../../lib/stockTakeQueue';
 import VariantBuilder from '../../components/VariantBuilder';
 import BatchManager from '../../components/BatchManager';
+import RecipeEditor, { recipePayload, recipeProblem } from '../../components/RecipeEditor';
+import { recipeUnitChoices, recipeUnitFactor } from '../../../lib/recipeUnits';
+import KitchenStock from '../../components/KitchenStock';
 import { SkeletonStats, SkeletonTable } from '../../components/Skeleton';
 import DataLoadNotice from '../../components/DataLoadNotice';
 import Dropdown from '../../components/Dropdown';
@@ -61,6 +64,7 @@ import {
   splitPackStock,
   formatSubUnitPrice,
   unitOptions,
+  isLegacyGstSlab,
 } from '../../../lib/catalog';
 import { businessType, businessTypeOptions, tradeUses, DEFAULT_BUSINESS_TYPE } from '../../../lib/businessTypes';
 import Illustration from '../../components/Illustration';
@@ -131,6 +135,7 @@ const BASE_FORM = {
   // product's stock is the sum of its lots and only the batch manager may move it.
   trackBatches: false,
   lowStockThreshold: '5',
+  lowStockUnit: '',
   category: '',
   expiryDate: '',
   hsnCode: '',
@@ -154,6 +159,8 @@ const BASE_FORM = {
   subUnitPrice: '',
   priceTiers: [],
   recipe: [],
+  recipeExtraCost: '',
+  recipeYield: '',
   modifierGroups: [],
   parcelPrice: '',
   deliveryPrice: '',
@@ -215,6 +222,11 @@ function stockStatus(product) {
   // A haircut is never out of stock. Services sit at 0 forever and would otherwise be
   // counted as "out" by this card and listed by the refill filter — the server's low-stock
   // count has always excluded them, which is half of why the two numbers disagreed.
+  // A recipe dish has no shelf of its own — its ingredients do, and they are rows on this
+  // same list with their own badges. Counting the dish too called every dish "out".
+  // Checked before the service rule: a hotel that entered its menu as services still wants
+  // "can make 5" on each item, not a duration badge.
+  if (product.recipe?.length) return 'dish';
   if (product.kind === 'service') return 'na';
   const stock = sellableStock(product);
   if (stock <= 0) return 'out';
@@ -232,9 +244,54 @@ function expiryMatches(product, filter) {
 // The filter reads a bucket, not a status, so 'refill' can span two of them.
 function stockMatches(product, filter) {
   const key = stockStatus(product);
-  if (key === 'na') return false;
+  if (key === 'na' || key === 'dish') return false;
   if (filter === 'refill') return key === 'low' || key === 'out';
   return key === filter;
+}
+
+/**
+ * What a dish's stock cell says instead of "0 piece · Out of stock": how many the
+ * ingredients on the shelf can make, and which one runs out first. One element.
+ */
+function DishStock({ product, t, lang, block = false }) {
+  const n = product.servingsPossible;
+  const limit = product.limitingIngredient?.name;
+  const Tag = block ? 'div' : 'span';
+  if (product.recipeMissing) {
+    return <Tag className="dish-stock is-out">{t('recipe.dishMissing')}</Tag>;
+  }
+  if (n == null) return <Tag className="dish-stock">{t('recipe.madeToOrder')}</Tag>;
+  return (
+    <Tag className={`dish-stock${n === 0 ? ' is-out' : ''}`}>
+      <span className={`stock-dot ${n === 0 ? 'out' : 'ok'}`} />
+      <strong>{n === 0 ? t('recipe.dishCantMake') : t('recipe.dishCanMake', { n: formatQty(n, lang) })}</strong>
+      {limit && (
+        <span className="cell-sub">
+          {n === 0 ? t('recipe.dishOutBecause', { name: limit }) : t('recipe.summaryLimit', { name: limit })}
+        </span>
+      )}
+    </Tag>
+  );
+}
+
+// The alert level's unit on the form, falling back to the stock unit whenever the chosen
+// one no longer converts (the stock unit was just changed from kg to packet, say).
+function alertUnitChoices(form) {
+  return recipeUnitChoices({ unit: form.unit, subUnit: form.subUnit, subUnitsPerUnit: Number(form.subUnitsPerUnit) || 0 });
+}
+function alertUnitOf(form) {
+  const choices = alertUnitChoices(form);
+  return form.lowStockUnit && choices.includes(form.lowStockUnit) ? form.lowStockUnit : form.unit;
+}
+// Stock units per one alert unit (gram → kg is 0.001).
+function alertFactor(form) {
+  return recipeUnitFactor(alertUnitOf(form), { unit: form.unit, subUnit: form.subUnit, subUnitsPerUnit: Number(form.subUnitsPerUnit) || 0 }) || 1;
+}
+function alertForForm(product) {
+  const level = Number(product.lowStockThreshold ?? 5);
+  const factor = product.lowStockUnit ? recipeUnitFactor(product.lowStockUnit, product) : null;
+  if (!factor) return { lowStockThreshold: String(level), lowStockUnit: '' };
+  return { lowStockThreshold: String(Number((level / factor).toFixed(3))), lowStockUnit: product.lowStockUnit };
 }
 
 function sellableStock(product) {
@@ -358,7 +415,9 @@ function SellerProductsPageInner() {
   const showWeightPricing = bizType === 'jewellery' || products.some((p) => p.pricingMode === 'weight');
   const showSecondaryUnit = tradeUses(bizType, 'secondaryUnit', products.some((p) => p.secondaryUnit));
   const showPriceTiers = tradeUses(bizType, 'priceTiers', products.some((p) => p.priceTiers?.length));
-  const showRecipe = tradeUses(bizType, 'recipe', products.some((p) => p.recipe?.length));
+  const showRecipe = tradeUses(bizType, 'recipe', products.some((p) => p.recipe?.length && p.kind !== 'service'));
+  // The same editor on a service: what a haircut or a wash uses up.
+  const showServiceMaterials = tradeUses(bizType, 'serviceMaterials', products.some((p) => p.recipe?.length && p.kind === 'service'));
   const showModifiers = tradeUses(bizType, 'modifiers', products.some((p) => p.modifierGroups?.length));
   const showChannelPricing = tradeUses(bizType, 'channelPricing', products.some((p) => p.orderTypePricing?.parcel || p.orderTypePricing?.delivery));
   const showLooseSale = tradeUses(bizType, 'looseSale', products.some((p) => p.subUnit));
@@ -392,6 +451,12 @@ function SellerProductsPageInner() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [stockTakeOpen, setStockTakeOpen] = useState(false);
+  const [kitchenOpen, setKitchenOpen] = useState(false);
+  // Products still on a pre-GST-2.0 slab (12% / 28%) — see the banner above the list.
+  const legacyGstProducts = useMemo(
+    () => products.filter((p) => p.status !== 'archived' && isLegacyGstSlab(p.gstRate)),
+    [products]
+  );
   // Which bulk edit the selection bar is asking a value for: 'price' | 'category' |
   // 'lowStock'. One panel at a time — a bar with three open forms in it is a form, and a
   // selection bar has to stay readable at a glance.
@@ -585,6 +650,19 @@ function SellerProductsPageInner() {
    * needed somewhere at the top of it. Consumed once and stripped from the URL, same as
    * `?edit=`, so a later save can't reopen it.
    */
+  // `?view=kitchen` — the deep link the Tables screen and the command palette use to land
+  // straight on Kitchen stock. Consumed once and stripped, like `?new=`.
+  const viewParam = searchParams.get('view');
+  const consumedViewParam = useRef(false);
+  useEffect(() => {
+    if (viewParam !== 'kitchen' || consumedViewParam.current) return;
+    consumedViewParam.current = true;
+    setKitchenOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('view');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`);
+  }, [viewParam]);
+
   const newParam = searchParams.get('new');
   const consumedNewParam = useRef(false);
   useEffect(() => {
@@ -750,7 +828,7 @@ function SellerProductsPageInner() {
 
   const lowOrOut = counts.stock.refill;
   const totalSellableStock = products
-    .filter((product) => product.kind !== 'service')
+    .filter((product) => product.kind !== 'service' && !product.recipe?.length)
     .reduce((sum, product) => sum + sellableStock(product), 0);
   const expiringOrExpired = counts.expiry.atrisk;
 
@@ -812,7 +890,8 @@ function SellerProductsPageInner() {
       altCodes: product.altCodes || [],
       stock: product.stock ?? '',
       trackBatches: Boolean(product.trackBatches),
-      lowStockThreshold: String(product.lowStockThreshold ?? '5'),
+      // Shown back in the unit it was set in: 0.5 kg set as "500 gram" reads "500 gram".
+      ...alertForForm(product),
       category: product.category || '',
       expiryDate: product.expiryDate ? product.expiryDate.slice(0, 10) : '',
       hsnCode: product.hsnCode || '',
@@ -835,7 +914,15 @@ function SellerProductsPageInner() {
       subUnitsPerUnit: product.subUnitsPerUnit ?? '',
       subUnitPrice: product.subUnitPrice ?? '',
       priceTiers: (product.priceTiers || []).map((t2) => ({ minQty: String(t2.minQty), price: String(t2.price) })),
-      recipe: (product.recipe || []).map((r) => ({ product: r.product?._id || r.product, quantity: String(r.quantity) })),
+      // `amount`/`unit` are what the cook typed. An older line has neither, and its
+      // `quantity` was always in the ingredient's stock unit — shown as exactly that.
+      recipe: (product.recipe || []).map((r) => ({
+        product: r.product?._id || r.product,
+        amount: String(r.amount ?? r.quantity),
+        unit: r.unit || '',
+      })),
+      recipeExtraCost: product.recipeExtraCost ?? '',
+      recipeYield: product.recipeYield ?? '',
       parcelPrice: product.orderTypePricing?.parcel ?? '',
       deliveryPrice: product.orderTypePricing?.delivery ?? '',
       modifierGroups: (product.modifierGroups || []).map((g) => ({
@@ -1079,14 +1166,34 @@ function SellerProductsPageInner() {
     setForm((f) => ({ ...f, priceTiers: f.priceTiers.filter((_, i) => i !== index) }));
   }
 
-  function addRecipeLine() {
-    setForm((f) => ({ ...f, recipe: [...f.recipe, { product: '', quantity: '' }] }));
+  function setRecipe(lines) {
+    setForm((f) => ({ ...f, recipe: lines }));
   }
-  function updateRecipeLine(index, key, value) {
-    setForm((f) => ({ ...f, recipe: f.recipe.map((row, i) => (i === index ? { ...row, [key]: value } : row)) }));
-  }
-  function removeRecipeLine(index) {
-    setForm((f) => ({ ...f, recipe: f.recipe.filter((_, i) => i !== index) }));
+
+  /**
+   * A raw ingredient made from inside a dish's recipe: no selling price, kept off the online
+   * shop, filed under "Ingredients". The counter keeps unpriced ingredients out of its
+   * search and grid too (see kitchenOnlyIds in billing), so a cashier cannot bill raw paneer.
+   */
+  async function createIngredient({ name, unit, stock, costPrice, lowStockThreshold }) {
+    const data = await apiFetch('/api/seller/products', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        unit,
+        price: 0,
+        costPrice,
+        stock,
+        lowStockThreshold,
+        kind: 'goods',
+        category: t('recipe.ingredientCategory'),
+        showInCatalog: false,
+      }),
+    });
+    const created = data.product;
+    if (created) setProducts((list) => [created, ...list]);
+    toast.success(t('recipe.newCreated', { name: created?.name || name }));
+    return created;
   }
 
   function addModifierGroup() {
@@ -1130,11 +1237,17 @@ function SellerProductsPageInner() {
 
   async function recalcCost() {
     if (!editingId) return;
+    const recipeError = recipeProblem(form.recipe, products, t);
+    if (recipeError) {
+      toast.error(recipeError);
+      return;
+    }
     try {
-      const recipe = form.recipe
-        .filter((row) => row.product && Number(row.quantity) > 0)
-        .map((row) => ({ product: row.product, quantity: Number(row.quantity) }));
-      const data = await apiFetch(`/api/seller/products/${editingId}/recalc-cost`, { method: 'POST', body: JSON.stringify({ recipe }) });
+      const recipe = recipePayload(form.recipe, products);
+      const data = await apiFetch(`/api/seller/products/${editingId}/recalc-cost`, {
+        method: 'POST',
+        body: JSON.stringify({ recipe, recipeExtraCost: form.recipeExtraCost, recipeYield: form.recipeYield }),
+      });
       setForm((f) => ({ ...f, costPrice: String(data.product.costPrice) }));
       toast.success(t('seller.recipeCostUpdated', { cost: data.product.costPrice }));
     } catch (err) {
@@ -1145,6 +1258,20 @@ function SellerProductsPageInner() {
   async function handleSubmit(event) {
     event.preventDefault();
     setFormError('');
+    // An incomplete recipe line would otherwise be dropped on save without a word.
+    const recipeError = recipeProblem(form.recipe, products, t);
+    if (recipeError) {
+      setFormError(recipeError);
+      return;
+    }
+    if (form.recipeExtraCost !== '' && !(Number(form.recipeExtraCost) >= 0)) {
+      setFormError(t('recipe.errExtraCost'));
+      return;
+    }
+    if (form.recipeYield !== '' && !(Number(form.recipeYield) > 0)) {
+      setFormError(t('recipe.errYield'));
+      return;
+    }
     setSubmitting(true);
 
     const isService = form.kind === 'service';
@@ -1184,11 +1311,13 @@ function SellerProductsPageInner() {
       ...(sendsStock ? { stock: isService ? 0 : Number(form.stock) || 0 } : {}),
       // `|| 5` here meant a reorder level of 0 — "stop warning me about this one" — was
       // silently turned back into 5 on every save. Only a genuinely empty box falls back.
+      // Typed in the alert unit, stored in the stock unit (500 gram → 0.5 kg).
       lowStockThreshold: isService
         ? 0
         : form.lowStockThreshold === '' || Number.isNaN(Number(form.lowStockThreshold))
         ? 5
-        : Number(form.lowStockThreshold),
+        : Number((Number(form.lowStockThreshold) * alertFactor(form)).toFixed(6)),
+      lowStockUnit: isService ? '' : alertUnitOf(form),
       category: form.category,
       // Every optional box below is sent as '' rather than omitted when it is empty, for
       // the same reason the photo and the MRP already were: on a PATCH the server reads a
@@ -1233,9 +1362,9 @@ function SellerProductsPageInner() {
         : form.priceTiers
             .filter((row) => row.minQty !== '' && row.price !== '')
             .map((row) => ({ minQty: Number(row.minQty), price: Number(row.price) })),
-      recipe: form.recipe
-        .filter((row) => row.product && row.quantity !== '')
-        .map((row) => ({ product: row.product, quantity: Number(row.quantity) })),
+      recipe: recipePayload(form.recipe, products),
+      recipeExtraCost: form.recipeExtraCost,
+      recipeYield: form.recipeYield,
       // Blank clears the override — always sent (as '') so a PATCH can actually remove one.
       orderTypePricing: { parcel: form.parcelPrice === '' ? '' : Number(form.parcelPrice), delivery: form.deliveryPrice === '' ? '' : Number(form.deliveryPrice) },
       modifierGroups: form.modifierGroups
@@ -1252,10 +1381,18 @@ function SellerProductsPageInner() {
 
     try {
       if (editingId) {
-        await apiFetch(`/api/seller/products/${editingId}`, {
+        const saved = await apiFetch(`/api/seller/products/${editingId}`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
+        // Changing an ingredient's unit (kg → gram) re-bases every recipe that uses it, so
+        // "200 g per plate" still means 200 g. Said out loud, because it touched other items.
+        if (saved?.recipesRebased?.updated > 0) {
+          toast.success(t('recipe.rebased', { n: saved.recipesRebased.updated }));
+        }
+        if (saved?.recipesRebased?.stuck?.length) {
+          toast.error(t('recipe.rebaseStuck', { names: saved.recipesRebased.stuck.slice(0, 3).join(', ') }));
+        }
       } else {
         await apiFetch('/api/seller/products', {
           method: 'POST',
@@ -1689,6 +1826,14 @@ function SellerProductsPageInner() {
               <ClipboardIcon size={17} />
               {t('stockTake.open')}
             </button>
+            {/* A kitchen's stock is its ingredients: one view of all of them, how long each
+                lasts, and which dishes stop when one runs out. */}
+            {(showRecipe || products.some((p) => p.recipe?.length)) && (
+              <button type="button" className="btn btn-secondary btn-inline" onClick={() => setKitchenOpen(true)}>
+                <LayersIcon size={17} />
+                {t('kitchenStock.open')}
+              </button>
+            )}
             <button type="button" className="btn btn-secondary btn-inline" disabled={exporting} onClick={handleExport}>
               <DownloadIcon size={17} />
               {exporting ? t('common.loading') : t('seller.exportInventory')}
@@ -1740,6 +1885,28 @@ function SellerProductsPageInner() {
 
       {error && <div className="error-banner">{error}</div>}
       <DataLoadNotice loading={loading} error={loadError} onRetry={load} />
+
+      {/* GST 2.0 (22 Sept 2025) removed the 12% and 28% slabs for almost everything. A
+          product still sitting on one bills at that rate on every new invoice, and nothing
+          said so. Not blocked — a few goods (tobacco) still carry 28% — but named, with the
+          way in to fix each one. Only for a shop that issues tax invoices. */}
+      {user?.gstin && legacyGstProducts.length > 0 && (
+        <div className="info-banner gst-legacy-banner">
+          <AlertIcon size={18} />
+          <div>
+            <strong>{t('seller.gstLegacyTitle', { count: legacyGstProducts.length })}</strong>
+            <p>{t('seller.gstLegacyBody')}</p>
+            <div className="gst-legacy-list">
+              {legacyGstProducts.slice(0, 12).map((p) => (
+                <button key={p._id} type="button" className="link-quiet" onClick={() => openEditForm(p)}>
+                  {p.name} ({p.gstRate}%)
+                </button>
+              ))}
+              {legacyGstProducts.length > 12 && <span className="cell-muted">+{legacyGstProducts.length - 12}</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <SkeletonStats count={4} />
@@ -2251,10 +2418,12 @@ function SellerProductsPageInner() {
                           </div>
                         </td>
                         <td className="num">
-                          {product.kind === 'service' ? (
+                          {product.kind === 'service' && stockKey !== 'dish' ? (
                             <span className="badge badge-active">
                               {t('seller.serviceRow', { minutes: product.durationMinutes || 30 })}
                             </span>
+                          ) : stockKey === 'dish' ? (
+                            <DishStock product={product} t={t} lang={lang} block />
                           ) : (
                             <>
                               <span className={`stock-dot ${stockKey === 'out' ? 'out' : stockKey === 'low' ? 'low' : 'ok'}`} />
@@ -2275,7 +2444,7 @@ function SellerProductsPageInner() {
                           )}
                         </td>
                         <td className="num cell-muted">
-                          {product.kind === 'service' ? '—' : money((Number(product.price) || 0) * sellableStock(product))}
+                          {product.kind === 'service' || stockKey === 'dish' ? '—' : money((Number(product.price) || 0) * sellableStock(product))}
                         </td>
                         <td>
                           {effectiveExpiry(product) ? (
@@ -2364,10 +2533,12 @@ function SellerProductsPageInner() {
                         {product.name}
                       </Link>
                       <div className="record-card-meta">
-                        {product.kind === 'service' ? (
+                        {product.kind === 'service' && stockKey !== 'dish' ? (
                           <span className="badge badge-active">
                             {t('seller.serviceRow', { minutes: product.durationMinutes || 30 })}
                           </span>
+                        ) : stockKey === 'dish' ? (
+                          <DishStock product={product} t={t} lang={lang} />
                         ) : (
                           <span>
                             <span className={`stock-dot ${stockKey === 'out' ? 'out' : stockKey === 'low' ? 'low' : 'ok'}`} />
@@ -2461,9 +2632,24 @@ function SellerProductsPageInner() {
 
       {/* Counts whatever the list is currently filtered to — not the current page: you
           count a shelf, and a shelf does not stop at row 25. */}
+      {kitchenOpen && canSell && (
+        <KitchenStock
+          onClose={() => setKitchenOpen(false)}
+          onChanged={load}
+          onOpenProduct={(id) => {
+            const product = products.find((p) => p._id === id);
+            if (product) {
+              setKitchenOpen(false);
+              openEditForm(product);
+            }
+          }}
+        />
+      )}
+
       {stockTakeOpen && canSell && (
         <StockTake
-          products={sorted}
+          // A recipe dish has no shelf to count — its ingredients are on this list.
+          products={sorted.filter((p) => !(p.recipe?.length && p.kind !== 'service'))}
           scopeLabel={
             categoryFilter ||
             (stockFilter !== 'all'
@@ -2909,6 +3095,8 @@ function SellerProductsPageInner() {
                       <span className="affix trail">{t(`units.${form.unit}`)}</span>
                     </div>
                     {form.trackBatches && <p className="field-hint">{t('seller.stockBatchLocked')}</p>}
+                    {/* A dish's own stock is never read: billing takes its ingredients. */}
+                    {form.recipe.some((r) => r.product) && <p className="field-hint">{t('recipe.dishStockNote')}</p>}
                   </div>
                 )}
                 <div className="field">
@@ -3115,7 +3303,30 @@ function SellerProductsPageInner() {
                       <div className="form-grid">
                         <div className="field">
                           <label htmlFor="lowStockThreshold">{t('seller.lowStockThreshold')}</label>
-                          <input id="lowStockThreshold" type="number" min="0" step="0.001" value={form.lowStockThreshold} onChange={update('lowStockThreshold')} />
+                          {/* In the stock unit, said on the box: "5" on paneer is 5 kg, on
+                              saffron it would be 5 grams, and a bare number hid which. */}
+                          {/* The number AND its unit: "500 gram" on paneer stocked by the kilo,
+                              "10 piece" on eggs stocked by the tray. Only units that convert to
+                              the stock unit are offered, so the alert can never mean the wrong
+                              amount. */}
+                          <div className="alert-level-row">
+                            <input id="lowStockThreshold" type="number" min="0" step="any" inputMode="decimal" value={form.lowStockThreshold} onChange={update('lowStockThreshold')} />
+                            {alertUnitChoices(form).length > 1 ? (
+                              <Dropdown
+                                className="alert-level-unit"
+                                value={alertUnitOf(form)}
+                                onChange={(u) => setForm((f) => ({ ...f, lowStockUnit: u }))}
+                                options={alertUnitChoices(form).map((u) => ({ value: u, label: t(`units.${u}`) }))}
+                              />
+                            ) : (
+                              <span className="alert-level-fixed">{t(`units.${form.unit}`)}</span>
+                            )}
+                          </div>
+                          <p className="field-hint">
+                            {form.recipe.some((r) => r.product)
+                              ? t('recipe.dishAlertNote')
+                              : t('seller.alertNotifyHint', { qty: form.lowStockThreshold || '0', unit: t(`units.${alertUnitOf(form)}`) })}
+                          </p>
                         </div>
                         {/* Expiry is asked for only where it means something. A hardware or
                             electronics shop never has an expiring item, and a service never has
@@ -3382,46 +3593,23 @@ function SellerProductsPageInner() {
                     </div>
                   )}
 
-                  {(showRecipe || form.recipe.length > 0) && (
-                  <div className="field" style={{ marginTop: '0.6rem' }}>
-                    <label>{t('seller.recipe')}</label>
-                    <p className="field-hint">{t('seller.recipeHint')}</p>
-                    {form.recipe.map((row, index) => (
-                      <div key={index} style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.4rem' }}>
-                        <Dropdown
-                          className="recipe-line-product"
-                          value={row.product}
-                          onChange={(v) => updateRecipeLine(index, 'product', v)}
-                          options={[
-                            { value: '', label: t('seller.selectProduct') },
-                            ...products.filter((p) => p._id !== editingId).map((p) => ({ value: p._id, label: `${p.name} (${p.unit})` })),
-                          ]}
-                        />
-                        <input
-                          type="number"
-                          min="0.001"
-                          step="0.001"
-                          placeholder={t('seller.quantity')}
-                          value={row.quantity}
-                          onChange={(e) => updateRecipeLine(index, 'quantity', e.target.value)}
-                          style={{ flex: 1 }}
-                        />
-                        <button type="button" className="icon-btn danger" onClick={() => removeRecipeLine(index)}>
-                          <XIcon size={17} />
-                        </button>
-                      </div>
-                    ))}
-                    <div className="row-actions">
-                      <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={addRecipeLine}>
-                        <PlusIcon size={15} /> {t('seller.addIngredient')}
-                      </button>
-                      {editingId && form.recipe.length > 0 && (
-                        <button type="button" className="btn btn-secondary btn-small btn-inline" onClick={recalcCost}>
-                          <RefreshIcon size={15} /> {t('seller.recalcCost')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  {(form.recipe.length > 0 || (form.kind === 'service' ? showServiceMaterials : showRecipe)) && (
+                    <RecipeEditor
+                      isService={form.kind === 'service'}
+                      extraCost={form.recipeExtraCost}
+                      onExtraCostChange={(v) => setForm((f) => ({ ...f, recipeExtraCost: v }))}
+                      recipeYield={form.recipeYield}
+                      onYieldChange={(v) => setForm((f) => ({ ...f, recipeYield: v }))}
+                      onCreateIngredient={createIngredient}
+                      lines={form.recipe}
+                      onChange={setRecipe}
+                      products={products}
+                      editingId={editingId}
+                      dishUnit={form.unit}
+                      onRecalcCost={editingId ? recalcCost : undefined}
+                      t={t}
+                      lang={lang}
+                    />
                   )}
 
                   {(showChannelPricing || form.parcelPrice !== '' || form.deliveryPrice !== '') && (

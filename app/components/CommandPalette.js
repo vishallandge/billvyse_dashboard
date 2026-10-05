@@ -103,6 +103,7 @@ const ACTIONS = [
   { id: 'quotations', href: '/seller/estimates', navKey: 'estimates', permission: 'billing', words: 'quotation quote estimate bhaav rate pending' },
   { id: 'addProduct', href: '/seller/products?new=1', navKey: 'inventory', permission: 'inventory', words: 'add product naya item stock entry' },
   { id: 'lowStock', href: '/seller/products?stock=refill', navKey: 'inventory', permission: 'inventory', words: 'low stock khatam reorder' },
+  { id: 'kitchenStock', href: '/seller/products?view=kitchen', navKey: 'inventory', permission: 'inventory', words: 'kitchen stock rasoi saman samaan ingredient recipe paneer khatam kitna bacha' },
   { id: 'expiring', href: '/seller/products?expiry=expiring', navKey: 'inventory', permission: 'inventory', words: 'expiry expiring soon kharab' },
   { id: 'expired', href: '/seller/products?expiry=expired', navKey: 'inventory', permission: 'inventory', words: 'expired kharab dead stock return' },
   { id: 'addExpense', href: '/seller/expenses?new=1', navKey: 'expenses', permission: 'expenses', words: 'add kharcha expense naya' },

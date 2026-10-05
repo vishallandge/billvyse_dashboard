@@ -104,7 +104,10 @@ const DEFAULT_BILL_QUERY = {
   to: '',
   q: '',
   paymentMode: '',
-  status: '',
+  // Cancelled bills are LISTED by default — struck through in red with who cancelled them —
+  // so a deleted bill is never invisible. They are never inside the money totals (the
+  // server keeps them out of Sales, the mode split and the counter/cashier sums).
+  status: 'all',
   counter: '',
   cashier: '',
   unpaid: false,
@@ -1376,9 +1379,26 @@ export default function SellerBillingPage() {
    * spends its whole day on and usually on the cheapest phone in the building. That is
    * exactly the shape of lag a cashier feels as "typing is behind me".
    */
+  /**
+   * Kitchen-only stock: raw paneer, tomato, oil — used in a recipe and never sold (no price).
+   * Left in the counter's search and grid, a cashier tapping "Paneer" billed a kilo of raw
+   * paneer at ₹0 instead of the dish. They stay in `products` (the dish checks need their
+   * stock); they are only kept out of what the cashier picks from.
+   */
+  const kitchenOnlyIds = useMemo(() => {
+    const used = new Set();
+    for (const p of products) for (const line of p.recipe || []) used.add(String(line.product?._id || line.product));
+    if (!used.size) return new Set();
+    return new Set(products.filter((p) => used.has(p._id) && !(Number(p.price) > 0)).map((p) => p._id));
+  }, [products]);
+  const sellableProducts = useMemo(
+    () => (kitchenOnlyIds.size ? products.filter((p) => !kitchenOnlyIds.has(p._id)) : products),
+    [products, kitchenOnlyIds]
+  );
+
   const searchIndex = useMemo(
-    () => products.map((product) => ({ product, haystack: product.name.toLowerCase() })),
-    [products]
+    () => sellableProducts.map((product) => ({ product, haystack: product.name.toLowerCase() })),
+    [sellableProducts]
   );
 
   const filteredProducts = useMemo(() => {
@@ -1414,8 +1434,8 @@ export default function SellerBillingPage() {
   const quickPickProducts = useMemo(() => {
     // On the fitted layout the shelf below the cart does this job properly, with stock and
     // categories and room to breathe. Two shortlists on one screen is one too many.
-    if (posFit || parsedQuery.term || products.length === 0) return [];
-    const byId = new Map(products.map((p) => [p._id, p]));
+    if (posFit || parsedQuery.term || sellableProducts.length === 0) return [];
+    const byId = new Map(sellableProducts.map((p) => [p._id, p]));
     const pinned = quickPicks.pins.map((id) => byId.get(id)).filter(Boolean);
     const pinnedIds = new Set(pinned.map((p) => p._id));
     const frequent = Object.entries(quickPicks.tally)
@@ -1423,7 +1443,7 @@ export default function SellerBillingPage() {
       .map(([id]) => byId.get(id))
       .filter((p) => p && !pinnedIds.has(p._id));
     return [...pinned, ...frequent].slice(0, QUICK_PICK_LIMIT);
-  }, [posFit, parsedQuery, products, quickPicks]);
+  }, [posFit, parsedQuery, sellableProducts, quickPicks]);
 
   /**
    * Which of this screen's boxes are actually scrolling.
@@ -1477,8 +1497,8 @@ export default function SellerBillingPage() {
    * never filled in a category should not be given a filter bar with one button in it.
    */
   const browseCategories = useMemo(
-    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    [products]
+    () => Array.from(new Set(sellableProducts.map((p) => p.category).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [sellableProducts]
   );
 
   /**
@@ -1490,10 +1510,10 @@ export default function SellerBillingPage() {
    * the rail's job done at full size, which is why the rail stands down on this layout.
    */
   const browseProducts = useMemo(() => {
-    if (!posFit || !shelfFits || parsedQuery.term || products.length === 0) return [];
+    if (!posFit || !shelfFits || parsedQuery.term || sellableProducts.length === 0) return [];
     const pins = new Set(quickPicks.pins);
     const tally = quickPicks.tally || {};
-    return products
+    return sellableProducts
       .filter((p) => !browseCategory || p.category === browseCategory)
       .slice()
       .sort((a, b) => {
@@ -1503,7 +1523,7 @@ export default function SellerBillingPage() {
         if (tallyDelta) return tallyDelta;
         return a.name.localeCompare(b.name);
       });
-  }, [posFit, shelfFits, parsedQuery, products, browseCategory, quickPicks]);
+  }, [posFit, shelfFits, parsedQuery, sellableProducts, browseCategory, quickPicks]);
 
   // A category that has been emptied — every product in it deleted or moved — would leave
   // the shelf staring at nothing with no way back except guessing. Drop the filter.
@@ -1974,6 +1994,11 @@ export default function SellerBillingPage() {
   function availableStock(productId) {
     const p = products.find((x) => x._id === productId);
     if (!p) return undefined;
+    // A dish is made from its ingredients; its own stock is a number nobody keeps, and
+    // reading it turned every dish red as "stock kam hai". What the shelf can make is the
+    // honest figure — and when the server did not send one, we do not know, so we do not
+    // block (it checks every ingredient on the way in anyway).
+    if (p.recipe?.length) return typeof p.servingsPossible === 'number' ? p.servingsPossible : undefined;
     // Batch-tracked stock may include expired lots. Only the unexpired portion is
     // sellable, matching the server's FEFO allocation rule.
     if (p.trackBatches && typeof p.sellableStock === 'number') return p.sellableStock;
@@ -2031,14 +2056,54 @@ export default function SellerBillingPage() {
   const neededStock = useMemo(() => {
     const map = new Map();
     for (const item of cart) {
-      if (item.isService) continue;
+      // A menu item entered as a service still draws on its recipe's shelf.
+      if (item.isService && !recipeOf(item.productId)) continue;
+      const lines = recipeOf(item.productId);
+      if (lines) {
+        // A dish wants its INGREDIENTS, added into the same map: two dishes that both use
+        // paneer, or a dish plus paneer sold loose, all draw on one shelf. Checking each
+        // dish against its own "can make N" waved a cart through that the shelf could not
+        // cover, and the server refused it after the cashier had already said the total.
+        for (const line of lines) {
+          const id = String(line.product?._id || line.product);
+          map.set(id, (map.get(id) || 0) + (Number(line.quantity) || 0) * stockQuantityOf(item));
+        }
+        continue;
+      }
       map.set(item.productId, (map.get(item.productId) || 0) + stockQuantityOf(item));
     }
     return map;
-  }, [cart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, products]);
+
+  // The recipe lines of a dish — or of a menu item entered as a service — or null. Neither
+  // ever blocks the bill (see stockShortages); the line just says what is short.
+  function recipeOf(productId) {
+    const p = products.find((x) => x._id === productId);
+    return p && p.recipe?.length ? p.recipe : null;
+  }
+
+  // The first ingredient this dish line cannot be covered by, counting every other line
+  // in the cart that draws on the same shelf. null when the shelf covers it, or when the
+  // ingredient is not in the loaded list (then the server is the judge).
+  function dishShortfall(item) {
+    const lines = recipeOf(item.productId);
+    if (!lines) return null;
+    for (const line of lines) {
+      const id = String(line.product?._id || line.product);
+      const stock = availableStock(id);
+      if (stock === undefined) continue;
+      if ((neededStock.get(id) || 0) > stock + 0.000001) {
+        const ingredient = products.find((x) => x._id === id);
+        return { id, name: ingredient?.name || '', per: Number(line.quantity) || 0, stock };
+      }
+    }
+    return null;
+  }
 
   function isOverStock(item) {
-    if (item.isService) return false;
+    if (item.isService && !recipeOf(item.productId)) return false;
+    if (recipeOf(item.productId)) return Boolean(dishShortfall(item));
     const stock = availableStock(item.productId);
     return stock !== undefined && (neededStock.get(item.productId) || 0) > stock;
   }
@@ -2054,7 +2119,16 @@ export default function SellerBillingPage() {
    * loose tablets), and the other rows have already claimed part of the shelf.
    */
   function lineStockRoom(item) {
-    if (item.isService) return null;
+    if (item.isService && !recipeOf(item.productId)) return null;
+    const short = dishShortfall(item);
+    if (short) {
+      // How many of THIS dish the short ingredient still allows once the other lines have
+      // taken their share — the number the quantity box can be set to.
+      const mine = short.per * stockQuantityOf(item);
+      const left = Math.max(0, short.stock - ((neededStock.get(short.id) || 0) - mine));
+      const room = short.per > 0 ? Math.floor(left / short.per + 1e-9) : 0;
+      return { room, unit: item.unit, ingredient: short.name };
+    }
     const stock = availableStock(item.productId);
     if (stock === undefined) return null;
     const claimedByOthers = (neededStock.get(item.productId) || 0) - stockQuantityOf(item);
@@ -2071,8 +2145,18 @@ export default function SellerBillingPage() {
 
   // Cart lines asking for more than we have in stock. Used to catch the problem inside
   // the review modal instead of after a rejected round-trip to the server.
+  // Lines that must be fixed before billing. Empty when the shop has chosen to bill below
+  // zero (Settings → "Let billing continue when stock shows zero"): the server lets those
+  // through, and blocking here anyway made that setting do nothing at the counter. The
+  // lines are still marked, so the cashier sees the count is off.
+  //
+  // A DISH never blocks either. Its ingredient counts are the least reliable numbers in a
+  // kitchen (a new hotel has not entered its stock yet; yesterday's delivery is still on
+  // paper), and the food is cooked by the time it is billed. The line still says which
+  // ingredient reads short, and the bill reports what went below zero.
   function stockShortages() {
-    return cart.filter(isOverStock);
+    if (user?.billingSettings?.allowNegativeStock) return [];
+    return cart.filter((item) => !recipeOf(item.productId) && isOverStock(item));
   }
 
   async function clearCart() {
@@ -2877,7 +2961,15 @@ export default function SellerBillingPage() {
           const loose = it.saleUnit && it.saleUnit === p.subUnit && packSize;
           return sum + (loose ? it.quantity / packSize : it.quantity);
         }, 0);
-        return off > 0 ? { ...p, stock: Math.max(0, p.stock - off) } : p;
+        if (!(off > 0)) return p;
+        // A dish's shelf is its ingredients, so it is the plates-possible figure that drops.
+        // Other dishes sharing those ingredients catch up on the next products load.
+        if (p.recipe?.length) {
+          return typeof p.servingsPossible === 'number'
+            ? { ...p, servingsPossible: Math.max(0, Math.floor(p.servingsPossible - off)) }
+            : p;
+        }
+        return { ...p, stock: Math.max(0, p.stock - off) };
       })
     );
     setLastTender(
@@ -3615,10 +3707,14 @@ export default function SellerBillingPage() {
   }
 
   async function handleCancelBill(bill) {
+    // The popup says the money: what comes off today's sales and every report, and that the
+    // bill stays on the list struck through with the canceller's name — never just gone.
     const answer = await confirm({
       tone: 'danger',
       title: t('seller.cancelBillTitle'), cancelLabel: t('common.goBack'),
-      body: t('seller.cancelBillReasonPrompt', { number: bill.billNumber }),
+      body: `${t('seller.cancelBillReasonPrompt', { number: bill.billNumber })} ${t('seller.cancelBillMoneyNote', {
+        amount: (bill.payableTotal ?? bill.total ?? 0).toFixed(2),
+      })}`,
       input: { label: t('seller.cancelBillReasonLabel'), placeholder: t('seller.cancelBillReasonPlaceholder'), required: true },
       confirmLabel: t('seller.cancelBillTitle'),
     });
@@ -4243,7 +4339,11 @@ export default function SellerBillingPage() {
                       return (
                         <div className="cart-line__problem">
                           <AlertIcon size={13} />
-                          <span>{t('seller.lineStockProblem', { count: room.room, unit: room.unit })}</span>
+                          <span>
+                            {room.ingredient
+                              ? t('recipe.cartShort', { name: room.ingredient, count: room.room })
+                              : t('seller.lineStockProblem', { count: room.room, unit: room.unit })}
+                          </span>
                           {room.room > 0 ? (
                             <button
                               type="button"
@@ -5452,7 +5552,7 @@ export default function SellerBillingPage() {
           {billOutcome?.negativeStock?.length > 0 && (
             <p className="error-banner" style={{ marginTop: '0.6rem' }}>
               {t('seller.negativeStockWarn', {
-                names: billOutcome.negativeStock.map((row) => `${row.name} (${row.quantity})`).join(', '),
+                names: billOutcome.negativeStock.map((row) => `${row.name} (${row.quantity}${row.unit ? ` ${t(`units.${row.unit}`)}` : ''})`).join(', '),
               })}
             </p>
           )}
@@ -5760,6 +5860,15 @@ export default function SellerBillingPage() {
                   </div>
                 );
               })}
+            {/* Cancelled bills are never inside Sales or the mode split — said here, in
+                red, so a missing ₹840 is never a mystery. */}
+            {billSummary.cancelled?.count > 0 && (
+              <div className="bill-summary__cell is-cancelled">
+                <span className="bill-summary__label">{t('seller.summaryCancelled')}</span>
+                <span className="bill-summary__value">{rupees(billSummary.cancelled.amount)}</span>
+                <span className="bill-summary__note">{t('seller.summaryCancelledNote', { count: billSummary.cancelled.count })}</span>
+              </div>
+            )}
             {billSummary.unpaid.amount > 0 && (
               <button
                 type="button"
@@ -5838,7 +5947,7 @@ export default function SellerBillingPage() {
                     const open = openBillId === bill._id;
                     return (
                     <Fragment key={bill._id}>
-                    <tr className={open ? 'is-open' : undefined}>
+                    <tr className={[open ? 'is-open' : '', bill.status === 'cancelled' ? 'is-cancelled-row' : ''].filter(Boolean).join(' ') || undefined}>
                       <td className="cell-strong">
                         {/* The number and the way into the bill's contents are the same
                             control: "unhone kya liya tha" is answered here rather than by
@@ -5874,7 +5983,18 @@ export default function SellerBillingPage() {
                       </td>
                       <td className="num cell-strong">
                         <div className="cell-stack">
-                          <span>₹{(bill.payableTotal ?? bill.total).toFixed(2)}</span>
+                          <span className={bill.status === 'cancelled' ? 'amount-struck' : undefined}>₹{(bill.payableTotal ?? bill.total).toFixed(2)}</span>
+                          {/* Who took this money off the books, and when — on the row itself. */}
+                          {bill.status === 'cancelled' && (
+                            <span className="cell-sub amount-out">
+                              {t('seller.cancelledByLine', {
+                                name: bill.cancelledByName || '—',
+                                time: bill.cancelledAt
+                                  ? new Date(bill.cancelledAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                                  : '',
+                              })}
+                            </span>
+                          )}
                           {due > 0 && <span className="cell-sub is-warn">{t('seller.stillDue', { amount: due.toFixed(2) })}</span>}
                         </div>
                       </td>
@@ -6646,11 +6766,22 @@ function ProductTile({ product, onAdd, pinned, onTogglePin, quantity, active, on
         {isExpiredProduct(product) && (
           <span className="tile-meta amount-out">{t('seller.expiredCannotBill', { names: product.name })}</span>
         )}
-        <span className="tile-meta">
-          {t('seller.stock')}: {packSize && packs.loose > 0
-            ? t('pack.stockWithLoose', { packs: packs.packs, unit: t(`units.${product.unit}`), loose: packs.loose, subUnit: t(`units.${product.subUnit}`) })
-            : `${product.stock} ${product.unit}`}
-        </span>
+        {product.recipe?.length ? (
+          // A dish: how many its ingredients can make, not a stock figure nobody keeps.
+          <span className={`tile-meta${product.servingsPossible === 0 ? ' amount-out' : ''}`}>
+            {typeof product.servingsPossible !== 'number'
+              ? t('recipe.madeToOrder')
+              : product.servingsPossible === 0
+                ? t('recipe.dishOutBecause', { name: product.limitingIngredient?.name || '' })
+                : t('recipe.dishCanMake', { n: product.servingsPossible })}
+          </span>
+        ) : (
+          <span className="tile-meta">
+            {t('seller.stock')}: {packSize && packs.loose > 0
+              ? t('pack.stockWithLoose', { packs: packs.packs, unit: t(`units.${product.unit}`), loose: packs.loose, subUnit: t(`units.${product.subUnit}`) })
+              : `${product.stock} ${product.unit}`}
+          </span>
+        )}
         <span className="tile-price">
           ₹{product.price}<small> / {product.unit}</small>
           {/* The multiplier is repeated on the tile itself: the cashier's eye is on the
