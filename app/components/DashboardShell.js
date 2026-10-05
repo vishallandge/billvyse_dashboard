@@ -1891,6 +1891,7 @@ export default function DashboardShell({ role, navItems, children }) {
           onClose={() => setPaletteOpen(false)}
           navItems={reachableNav}
           canSearch={canSearch(user)}
+          businessType={user?.businessType}
         />
       )}
       {showTour && <SidebarTour teamOnly={hiddenNav.includes('stores')} onDone={() => setShowTour(false)} />}

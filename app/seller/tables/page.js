@@ -20,7 +20,7 @@ import {
 } from '../../../lib/tableSplit';
 import { getShopSocket } from '../../../lib/socket';
 import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
-import { businessType, DEFAULT_BUSINESS_TYPE } from '../../../lib/businessTypes';
+import { tradeUses, businessType, DEFAULT_BUSINESS_TYPE } from '../../../lib/businessTypes';
 import { useLanguage } from '../../components/LanguageProvider';
 import Illustration from '../../components/Illustration';
 import { useToast } from '../../components/Toast';
@@ -3063,7 +3063,9 @@ export default function TablesPage() {
               {/* The raw stock the floor runs on — how much paneer is left, how long it
                   lasts. Lived only behind a button on the Products page, where an owner on
                   the floor never went. */}
-              {!hiddenNav.includes('inventory') && (user?.role !== 'staff' || user?.permissions?.includes('inventory')) && (
+              {!hiddenNav.includes('inventory')
+                && tradeUses(user?.businessType || DEFAULT_BUSINESS_TYPE, 'recipe')
+                && (user?.role !== 'staff' || user?.permissions?.includes('inventory')) && (
                 <Link href="/seller/products?view=kitchen" className="btn btn-secondary btn-inline">
                   <LayersIcon size={17} /> {t('kitchenStock.open')}
                 </Link>

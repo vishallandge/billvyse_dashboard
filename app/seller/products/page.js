@@ -253,8 +253,10 @@ function stockMatches(product, filter) {
  * What a dish's stock cell says instead of "0 piece · Out of stock": how many the
  * ingredients on the shelf can make, and which one runs out first. One element.
  */
-function DishStock({ product, t, lang, block = false }) {
+function DishStock({ product, t, lang, block = false, food = true }) {
   const n = product.servingsPossible;
+  // A salon/laundry service with materials: "material for 300", not "can make 300".
+  const canMakeKey = product.kind === 'service' && !food ? 'recipe.materialFor' : 'recipe.dishCanMake';
   const limit = product.limitingIngredient?.name;
   const Tag = block ? 'div' : 'span';
   if (product.recipeMissing) {
@@ -264,7 +266,7 @@ function DishStock({ product, t, lang, block = false }) {
   return (
     <Tag className={`dish-stock${n === 0 ? ' is-out' : ''}`}>
       <span className={`stock-dot ${n === 0 ? 'out' : 'ok'}`} />
-      <strong>{n === 0 ? t('recipe.dishCantMake') : t('recipe.dishCanMake', { n: formatQty(n, lang) })}</strong>
+      <strong>{n === 0 ? t('recipe.dishCantMake') : t(canMakeKey, { n: formatQty(n, lang) })}</strong>
       {limit && (
         <span className="cell-sub">
           {n === 0 ? t('recipe.dishOutBecause', { name: limit }) : t('recipe.summaryLimit', { name: limit })}
@@ -1828,7 +1830,10 @@ function SellerProductsPageInner() {
             </button>
             {/* A kitchen's stock is its ingredients: one view of all of them, how long each
                 lasts, and which dishes stop when one runs out. */}
-            {(showRecipe || products.some((p) => p.recipe?.length)) && (
+            {/* Food trades only (restaurant, cafe, dhaba, tea stall, bakery) — or a shop that
+                already has a dish with a recipe. A salon whose service uses shampoo is not a
+                kitchen; its materials alert like any product. */}
+            {showRecipe && (
               <button type="button" className="btn btn-secondary btn-inline" onClick={() => setKitchenOpen(true)}>
                 <LayersIcon size={17} />
                 {t('kitchenStock.open')}
@@ -2423,7 +2428,7 @@ function SellerProductsPageInner() {
                               {t('seller.serviceRow', { minutes: product.durationMinutes || 30 })}
                             </span>
                           ) : stockKey === 'dish' ? (
-                            <DishStock product={product} t={t} lang={lang} block />
+                            <DishStock product={product} t={t} lang={lang} block food={showRecipe} />
                           ) : (
                             <>
                               <span className={`stock-dot ${stockKey === 'out' ? 'out' : stockKey === 'low' ? 'low' : 'ok'}`} />
@@ -2538,7 +2543,7 @@ function SellerProductsPageInner() {
                             {t('seller.serviceRow', { minutes: product.durationMinutes || 30 })}
                           </span>
                         ) : stockKey === 'dish' ? (
-                          <DishStock product={product} t={t} lang={lang} />
+                          <DishStock product={product} t={t} lang={lang} food={showRecipe} />
                         ) : (
                           <span>
                             <span className={`stock-dot ${stockKey === 'out' ? 'out' : stockKey === 'low' ? 'low' : 'ok'}`} />

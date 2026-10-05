@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { tradeUses, DEFAULT_BUSINESS_TYPE } from '../../lib/businessTypes';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
 import { useLanguage } from './LanguageProvider';
@@ -103,7 +104,9 @@ const ACTIONS = [
   { id: 'quotations', href: '/seller/estimates', navKey: 'estimates', permission: 'billing', words: 'quotation quote estimate bhaav rate pending' },
   { id: 'addProduct', href: '/seller/products?new=1', navKey: 'inventory', permission: 'inventory', words: 'add product naya item stock entry' },
   { id: 'lowStock', href: '/seller/products?stock=refill', navKey: 'inventory', permission: 'inventory', words: 'low stock khatam reorder' },
-  { id: 'kitchenStock', href: '/seller/products?view=kitchen', navKey: 'inventory', permission: 'inventory', words: 'kitchen stock rasoi saman samaan ingredient recipe paneer khatam kitna bacha' },
+  // `tool`: offered only to the trades that use it (lib/businessTypes.js) — a kirana typing
+  // "stock" must not be handed a "Kitchen stock" it has no kitchen for.
+  { id: 'kitchenStock', tool: 'recipe', href: '/seller/products?view=kitchen', navKey: 'inventory', permission: 'inventory', words: 'kitchen stock rasoi saman samaan ingredient recipe paneer khatam kitna bacha' },
   { id: 'expiring', href: '/seller/products?expiry=expiring', navKey: 'inventory', permission: 'inventory', words: 'expiry expiring soon kharab' },
   { id: 'expired', href: '/seller/products?expiry=expired', navKey: 'inventory', permission: 'inventory', words: 'expired kharab dead stock return' },
   { id: 'addExpense', href: '/seller/expenses?new=1', navKey: 'expenses', permission: 'expenses', words: 'add kharcha expense naya' },
@@ -141,7 +144,7 @@ function score(query, label, aliases) {
   return -1;
 }
 
-export default function CommandPalette({ open, onClose, navItems, canSearch }) {
+export default function CommandPalette({ open, onClose, navItems, canSearch, businessType: trade }) {
   const router = useRouter();
   const { t } = useLanguage();
   const [query, setQuery] = useState('');
@@ -217,6 +220,7 @@ export default function CommandPalette({ open, onClose, navItems, canSearch }) {
     const actionHits = [];
     for (const action of ACTIONS) {
       if (!byKey.has(action.navKey)) continue;
+      if (action.tool && !tradeUses(trade || DEFAULT_BUSINESS_TYPE, action.tool)) continue;
       const label = t(`cmdk.action.${action.id}`);
       const rank = score(q, label, `${action.id} ${action.words}`);
       if (rank >= 0) actionHits.push({ kind: 'action', id: `act:${action.id}`, navKey: action.navKey, label, href: action.href, rank });

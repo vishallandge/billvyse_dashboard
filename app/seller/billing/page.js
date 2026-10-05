@@ -388,6 +388,8 @@ export default function SellerBillingPage() {
   // Salon/gym/tuition-style trades see the "work done by" picker by default; anyone else
   // sees it only once they actually have a staff member on commission.
   const showStaffPicker = tradeUses(user?.businessType || DEFAULT_BUSINESS_TYPE, 'commission', staffPaysCommission);
+  // Food trades say a dish/menu item "can make N"; a salon's service says "material for N".
+  const foodTrade = tradeUses(user?.businessType || DEFAULT_BUSINESS_TYPE, 'recipe');
 
   function blankCharge() {
     return { name: '', price: '', quantity: '1', unit: 'service', gstRate: biz.defaultGstRate };
@@ -4004,6 +4006,7 @@ export default function SellerBillingPage() {
               <div className="pos-product-results" id="pos-results" role="listbox">
                 {filteredProducts.map((p, index) => (
                   <ProductTile
+                    foodTrade={foodTrade}
                     key={p._id}
                     product={p}
                     onAdd={handleProductAdd}
@@ -4526,6 +4529,7 @@ export default function SellerBillingPage() {
                 <div className="pos-browse-grid">
                   {browseProducts.slice(0, BROWSE_LIMIT).map((p) => (
                     <ProductTile
+                    foodTrade={foodTrade}
                       key={p._id}
                       product={p}
                       onAdd={handleProductAdd}
@@ -6742,7 +6746,7 @@ export default function SellerBillingPage() {
  * grid is also the only place the counter learns this product CAN be broken open, so the
  * per-piece price is printed right on it.
  */
-function ProductTile({ product, onAdd, pinned, onTogglePin, quantity, active, onHover, t }) {
+function ProductTile({ product, onAdd, pinned, onTogglePin, quantity, active, onHover, t, foodTrade = true }) {
   const packSize = packSizeOf(product);
   const packs = splitPackStock(product, product.stock);
   return (
@@ -6773,7 +6777,7 @@ function ProductTile({ product, onAdd, pinned, onTogglePin, quantity, active, on
               ? t('recipe.madeToOrder')
               : product.servingsPossible === 0
                 ? t('recipe.dishOutBecause', { name: product.limitingIngredient?.name || '' })
-                : t('recipe.dishCanMake', { n: product.servingsPossible })}
+                : t(product.kind === 'service' && !foodTrade ? 'recipe.materialFor' : 'recipe.dishCanMake', { n: product.servingsPossible })}
           </span>
         ) : (
           <span className="tile-meta">
