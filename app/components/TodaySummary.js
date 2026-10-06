@@ -8,7 +8,7 @@ import { formatRupees } from '../../lib/format';
 import { useLanguage } from './LanguageProvider';
 import AnimatedNumber from './AnimatedNumber';
 import { SkeletonStats } from './Skeleton';
-import { BookIcon, RefreshIcon, WhatsappIcon, AlertIcon, WalletIcon, ClockIcon, ReceiptIcon, CreditCardIcon, RupeeIcon } from './Icons';
+import { BookIcon, RefreshIcon, WhatsappIcon, AlertIcon, ClockIcon, ReceiptIcon, CreditCardIcon, RupeeIcon } from './Icons';
 
 /**
  * Today's Summary — the Overview's live read of the day's money.
@@ -85,7 +85,10 @@ export default function TodaySummary({ onShare }) {
         load().then(() => setBeat((b) => b + 1));
       }, 1200);
     }
-    const events = ['bill:created', 'table:settled'];
+    // Everything that moves today's money, not only a new bill: a return or cancel changes
+    // the takings, and udhaar received (khata:changed, from utils/khataBalance.js) changes
+    // what was collected. One debounced re-read covers a bill that fires two of these.
+    const events = ['bill:created', 'table:settled', 'bill:returned', 'bill:cancelled', 'khata:changed'];
     events.forEach((event) => socket.on(event, onBill));
     return () => {
       events.forEach((event) => socket.off(event, onBill));
@@ -119,6 +122,18 @@ export default function TodaySummary({ onShare }) {
     const onKhata = rows.find((row) => row.key === 'khata').value;
     const billed = collected + onKhata;
     const share = (value) => (billed > 0 ? (value / billed) * 100 : 0);
+    /**
+     * What actually ARRIVED today — the ring's centre. The mode rows are what each bill was
+     * rung in, and a khata bill is rung entirely as khata: whatever the customer paid on it
+     * (₹150 down at the table, or the whole ₹220 at the khata page an hour later) is booked
+     * as udhaar recovered, never as cash on the bill. Leaving that out had the centre say
+     * ₹460 on a day the drawer held ₹680, and the Day Book — which does count it — disagree.
+     * Refunds that went back as money come off; a khata refund only shrank a balance.
+     */
+    const recovered = Math.max(0, Number(summary.udhaarRecoveredToday) || 0);
+    const refunds = summary.refunds || {};
+    const moneyRefunded = Math.max(0, (Number(refunds.total) || 0) - (Number(refunds.khata) || 0));
+    const arrived = Math.max(0, collected + recovered - moneyRefunded);
 
     // Ring arcs, laid end to end from twelve o'clock.
     const live = rows.filter((row) => row.value > 0);
@@ -158,9 +173,8 @@ export default function TodaySummary({ onShare }) {
     if (onKhata > 0 && khataShare >= 25) {
       insights.push({ key: 'khata', tone: 'warn', icon: <AlertIcon size={15} />, text: t('seller.hisaabInsightKhataHeavy', { percent: n(khataShare) }) });
     }
-    if (summary.udhaarRecoveredToday > 0) {
-      insights.push({ key: 'recovered', tone: 'good', icon: <WalletIcon size={15} />, text: t('seller.hisaabInsightRecovered', { amount: rupees(summary.udhaarRecoveredToday) }) });
-    }
+    // Udhaar recovered is its own row in the money list now (and part of the centre), so no
+    // sentence repeats it here.
     if (peak && billCount >= 3) {
       insights.push({ key: 'peak', tone: 'plain', icon: <ClockIcon size={15} />, text: t('seller.hisaabInsightPeak', { hour: hourLabel(peak.hour), amount: rupees(peak.amount) }) });
     }
@@ -176,7 +190,7 @@ export default function TodaySummary({ onShare }) {
       );
     }
 
-    return { summary, rows, collected, onKhata, billed, share, arcs, span, peak, peakAmount, nowHour, billCount, insights: insights.slice(0, 4) };
+    return { summary, rows, collected, arrived, recovered, onKhata, billed, share, arcs, span, peak, peakAmount, nowHour, billCount, insights: insights.slice(0, 4) };
   }, [hisaab, t, n, rupees, hourLabel]);
 
   return (
@@ -211,7 +225,7 @@ export default function TodaySummary({ onShare }) {
       ) : view && (
         <>
           <div className="tsum-hero">
-            <div className="tsum-ring" role="img" aria-label={`${t('seller.hisaabCollected')} ${rupees(view.collected)}`}>
+            <div className="tsum-ring" role="img" aria-label={`${t('seller.hisaabCollected')} ${rupees(view.arrived)}`}>
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle className="tsum-ring-track" cx="60" cy="60" r={RING_R} />
                 <g transform="rotate(-90 60 60)">
@@ -234,8 +248,8 @@ export default function TodaySummary({ onShare }) {
               </svg>
               <div className="tsum-ring-centre">
                 <span className="tsum-ring-label">{t('seller.hisaabCollected')}</span>
-                <strong className={`tsum-ring-value${rupees(view.collected).length > 8 ? ' is-long' : ''}`}>
-                  <AnimatedNumber value={view.collected} prefix="₹" decimals={false} />
+                <strong className={`tsum-ring-value${rupees(view.arrived).length > 8 ? ' is-long' : ''}`}>
+                  <AnimatedNumber value={view.arrived} prefix="₹" decimals={false} />
                 </strong>
                 <span className="tsum-ring-sub">{t('seller.hisaabBillsCount', { count: n(view.billCount) })}</span>
               </div>
@@ -259,6 +273,16 @@ export default function TodaySummary({ onShare }) {
                     <span className="tsum-mode-share">{view.billed > 0 ? `${n(Math.round(view.share(row.value)))}%` : ''}</span>
                   </li>
                 ))}
+                {/* Money that came in against udhaar today — down-payments on today's khata
+                    bills and old balances alike. Part of the centre figure, so it is named. */}
+                {view.recovered > 0 && (
+                  <li className="tsum-mode is-recovered">
+                    <span className="tsum-mode-name">{t('seller.hisaabRecoveredRow')}</span>
+                    <span className="tsum-mode-track" aria-hidden="true" />
+                    <strong className="tsum-mode-value">+{rupees(view.recovered)}</strong>
+                    <span className="tsum-mode-share" />
+                  </li>
+                )}
                 {view.summary.refunds?.total > 0 && (
                   <li className="tsum-mode is-refund">
                     <span className="tsum-mode-name">{t('seller.hisaabRefunds')}</span>

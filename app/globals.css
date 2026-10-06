@@ -4987,6 +4987,10 @@ tbody tr {
    in the file is exactly how this overlay ended up padded 2rem while `.bill-confirm`
    was sized against the 1.25rem written here. */
 .modal-overlay.modal-overlay--fill {
+  /* Above every piece of chrome (sticky topbar 30, mobile drawer 40, growth bar 60), so
+     the breadcrumb and header buttons can never paint over the last look at a sale.
+     Still under the toast stack (90), so a failed-bill toast shows on top of it. */
+  z-index: 80;
   --ov-top: 1.75rem;
   --ov-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
   padding-top: var(--ov-top);
@@ -5010,6 +5014,11 @@ tbody tr {
      from stretching the same eight rows down 1300px. */
   max-height: min(calc(100dvh - var(--ov-top, 1.75rem) - var(--ov-bottom, 1.25rem)), 940px);
   padding: 1.15rem var(--modal-pad-x) 0;
+  /* A 1-item bill is a short card, and above 900px nothing else gave it a margin, so it
+     sat pinned 28px from the top edge, jammed against the topbar with empty screen below.
+     Auto margins centre it when it is short and collapse to zero when it fills the
+     screen, so a long bill still uses every pixel — same trick the ≤900px block uses. */
+  margin: auto;
 }
 
 /* The header is one of the three things competing with the item list for height, so it
@@ -59390,6 +59399,8 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
 
 .tsum-mode.is-refund .tsum-mode-value { color: var(--text-danger); }
 .tsum-mode.is-refund .tsum-mode-track { background: none; }
+.tsum-mode.is-recovered .tsum-mode-value { color: var(--text-success); }
+.tsum-mode.is-recovered .tsum-mode-track { background: none; }
 
 .tsum-note {
   margin: 0.65rem 0 0;

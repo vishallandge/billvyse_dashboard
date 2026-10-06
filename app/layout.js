@@ -2,6 +2,7 @@ import { Inter, Noto_Sans_Devanagari, Sora } from 'next/font/google';
 import './globals.css';
 import StartupStyles from './components/StartupStyles';
 import PwaRegister from './components/PwaRegister';
+import AppUpdater from './components/AppUpdater';
 import PrinterBoot from './components/PrinterBoot';
 import AutofillGuard from './components/AutofillGuard';
 
@@ -218,6 +219,9 @@ export default function RootLayout({ children }) {
           }}
         />
         <PwaRegister />
+        {/* Moves an open tab onto a new deploy by itself, at a moment nobody loses work —
+            so a shipped fix reaches the counter without anyone knowing Ctrl+Shift+R. */}
+        <AppUpdater />
         <PrinterBoot />
         {/* Keeps the browser's own saved-value dropdown from opening over our forms.
             Mounted at the top of <body> rather than inside a page, because every dialog

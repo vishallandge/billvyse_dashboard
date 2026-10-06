@@ -71,7 +71,24 @@ const config = {
 };
 
 // Keep builds from replacing a running dev server's CSS and chunks.
-export default (phase) => ({
-  ...config,
-  distDir: process.env.NEXT_BUILD_DIR || (phase === PHASE_DEVELOPMENT_SERVER ? '.next-dev' : '.next'),
-});
+export default (phase) => {
+  /**
+   * One stamp per build, so an open tab can tell that the server has moved on without it
+   * (components/AppUpdater.js asks /version.json). A shop's counter tab stays open all day;
+   * without this it keeps running yesterday's code after a deploy until somebody knows to
+   * press Ctrl+Shift+R — and nobody at a counter does.
+   *
+   * Parked in process.env rather than a local: the build re-reads this file in its worker
+   * processes, and a second Date.now() there would stamp the client bundle and
+   * /version.json differently and reload every tab forever. Workers inherit the parent's
+   * env, so the first value wins everywhere. Empty in dev, which switches the check off.
+   */
+  if (phase !== PHASE_DEVELOPMENT_SERVER && !process.env.NEXT_PUBLIC_APP_BUILD) {
+    process.env.NEXT_PUBLIC_APP_BUILD = Date.now().toString(36);
+  }
+  return {
+    ...config,
+    env: { ...config.env, NEXT_PUBLIC_APP_BUILD: process.env.NEXT_PUBLIC_APP_BUILD || '' },
+    distDir: process.env.NEXT_BUILD_DIR || (phase === PHASE_DEVELOPMENT_SERVER ? '.next-dev' : '.next'),
+  };
+};

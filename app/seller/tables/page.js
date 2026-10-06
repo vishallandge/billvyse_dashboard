@@ -29,6 +29,7 @@ import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { SkeletonStats } from '../../components/Skeleton';
 import Dropdown from '../../components/Dropdown';
+import KhataPaidNow, { khataSplit } from './KhataPaidNow';
 import PhoneField from '../../components/PhoneField';
 import Modal from '../../components/Modal';
 import ThermalReceipt from '../../components/ThermalReceipt';
@@ -312,6 +313,10 @@ export default function TablesPage() {
 
   const [settleMode, setSettleMode] = useState('cash');
   const [settleCustomerId, setSettleCustomerId] = useState('');
+  // "Kitna diya" on a khata settle; what is left goes on the khata. See KhataPaidNow.js.
+  const [paidNow, setPaidNow] = useState('');
+  const [paidNowMode, setPaidNowMode] = useState('cash');
+  const [guestPaid, setGuestPaid] = useState({}); // guestIndex -> { amount, mode }
   const [split, setSplit] = useState({ cash: '', upi: '', card: '' });
   const [billDiscountPercent, setBillDiscountPercent] = useState('');
   const [billDiscountAmount, setBillDiscountAmount] = useState('');
@@ -371,11 +376,18 @@ export default function TablesPage() {
       .catch((err) => setError(tableErrorText(err, t)));
   }
 
+  // Re-read after every khata settle: the "already owes" chip and the credit-limit warning on
+  // the NEXT bill are worked from these balances, and a list loaded once at page open kept
+  // showing what the customer owed before tonight's dinner.
+  function loadCustomers() {
+    return apiFetch('/api/seller/khata/customers').then((d) => setCustomers(d.customers || [])).catch(() => {});
+  }
+
   useEffect(() => {
     Promise.all([load(), loadFloorTables()]).finally(() => setLoading(false));
     apiFetch('/api/seller/products').then((d) => setProducts(d.products || [])).catch(() => {});
     apiFetch('/api/seller/staff/list').then((d) => setStaffList(d.staff || [])).catch(() => {});
-    apiFetch('/api/seller/khata/customers').then((d) => setCustomers(d.customers || [])).catch(() => {});
+    loadCustomers();
     // Same cached copy the sidebar reads — see lib/freshFetch.js.
     freshFetch('/api/seller/modules', { ttl: 60000 })
       .then((result) => setWhatsappOn(result.modules?.whatsapp !== false))
@@ -481,6 +493,8 @@ export default function TablesPage() {
     // How the last table paid, its discount and its customer are that table's — carried
     // over, T2 would settle on T1's khata customer or with T1's 10% off.
     setSettleMode('cash');
+    setPaidNow('');
+    setPaidNowMode('cash');
     setSplit({ cash: '', upi: '', card: '' });
     setBillDiscountPercent('');
     setBillDiscountAmount('');
@@ -1444,6 +1458,16 @@ export default function TablesPage() {
       toast.error(t('seller.splitMismatch', { entered: splitEntered.toFixed(2), due: payable.toFixed(2) }));
       return;
     }
+    // Kitna diya: blank or 0 is "sab udhaar", a minus or a stray letter is refused here
+    // rather than silently read as nothing. More than the bill is fine — the server books
+    // only the bill's worth and the card has already shown the change to hand back.
+    const khataMoney = settleMode === 'khata'
+      ? khataSplit({ payable, paidNow, customer: customerById(settleCustomerId) })
+      : null;
+    if (khataMoney && !khataMoney.valid) {
+      toast.error(t('tables.paidNowInvalid'));
+      return;
+    }
     const lines = wholeTableLines();
     setBusy('settle');
     try {
@@ -1460,6 +1484,8 @@ export default function TablesPage() {
           // sent to them, and shows up in their history.
           customerId: settleCustomerId || undefined,
           payments: settleMode === 'split' ? splitLines() : undefined,
+          paidNow: khataMoney && khataMoney.paid > 0 ? khataMoney.paid : undefined,
+          paidNowMode: khataMoney && khataMoney.paid > 0 ? paidNowMode : undefined,
           billDiscountPercent: Number(billDiscountPercent) || undefined,
           billDiscount: !Number(billDiscountPercent) && Number(billDiscountAmount) ? Number(billDiscountAmount) : undefined,
         }),
@@ -1468,6 +1494,7 @@ export default function TablesPage() {
         method: 'POST',
         body: JSON.stringify({ billId: billData.bill._id }),
       });
+      if (khataMoney) loadCustomers();
       // Something was added to the table after this bill was made. The bill is paid, the
       // extra stays open on the table — say exactly what, so it gets billed, never lost.
       if (settled?.leftover?.length) {
@@ -1481,11 +1508,14 @@ export default function TablesPage() {
       setActiveId(null);
       setSettleMode('cash');
       setSettleCustomerId('');
+      setPaidNow('');
+      setPaidNowMode('cash');
       setSplit({ cash: '', upi: '', card: '' });
       setBillDiscountPercent('');
       setBillDiscountAmount('');
       await Promise.all([load(), loadFloorTables()]);
     } catch (err) {
+      if (khataMoney) loadCustomers();
       if (!markExpiredError(err)) toast.error(tableErrorText(err, t));
       // Reload either way: the bill may well have been created before the failure, and
       // the floor must show the truth rather than what we hoped happened.
@@ -1501,6 +1531,7 @@ export default function TablesPage() {
     setGroupNames({});
     setGuestModes({ 0: 'cash', 1: 'cash' });
     setGuestCustomers({});
+    setGuestPaid({});
     setSplitGuestCount(2);
     setGuestSplitOpen(true);
   }
@@ -1640,8 +1671,17 @@ export default function TablesPage() {
     return Boolean(id) && !billableCustomers.some((c) => c.id === id);
   }
 
+  // A guest's khata bill, read through the same rule as the whole-table card, so the two
+  // can never disagree about "kitna diya, kitna baaki". Null for a guest not on khata.
+  function groupKhataMoney(g) {
+    if ((guestModes[g.index] || 'cash') !== 'khata') return null;
+    return khataSplit({ payable: g.payable, paidNow: guestPaid[g.index]?.amount ?? '', customer: customerById(guestCustomers[g.index]) });
+  }
+
   function createGroupBill(g, kind, { withTakeaway = g.takeaway > 0 } = {}) {
     const mode = guestModes[g.index] || 'cash';
+    const khataMoney = groupKhataMoney(g);
+    const paid = khataMoney && khataMoney.paid > 0 ? khataMoney.paid : 0;
     return apiFetch('/api/seller/bills', {
       method: 'POST',
       body: JSON.stringify({
@@ -1651,6 +1691,8 @@ export default function TablesPage() {
         orderType: active.orderType,
         counter: `${active.tableLabel || active.tableName} · ${groupLabel(g.index)}`,
         customerId: guestCustomers[g.index] || undefined,
+        paidNow: paid > 0 ? paid : undefined,
+        paidNowMode: paid > 0 ? guestPaid[g.index]?.mode || 'cash' : undefined,
         billDiscountPercent: Number(billDiscountPercent) || undefined,
       }),
     });
@@ -1683,6 +1725,13 @@ export default function TablesPage() {
       toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(gone.index) }));
       return;
     }
+    // Checked for every guest before the first bill is written, so a typo on the third
+    // guest's amount never leaves the first two billed and the table half-settled.
+    if (nonEmptyGroups.some((g) => groupKhataMoney(g)?.valid === false)) {
+      toast.error(t('tables.paidNowInvalid'));
+      return;
+    }
+    const anyKhata = nonEmptyGroups.some((g) => groupKhataMoney(g));
     setBusy('settle');
     try {
       // Sequential, not Promise.all — each POST is a real bill (stock moves, an invoice
@@ -1699,6 +1748,7 @@ export default function TablesPage() {
         method: 'POST',
         body: JSON.stringify({ billIds: createdBills.map((b) => b._id) }),
       });
+      if (anyKhata) loadCustomers();
       if (settled?.leftover?.length) {
         toast.error(leftoverText(settled.leftover));
         await Promise.all([load(), loadFloorTables()]);
@@ -1714,10 +1764,12 @@ export default function TablesPage() {
       });
       setActiveId(null);
       setGuestSplitOpen(false);
+      setGuestPaid({});
       setBillDiscountPercent('');
       setBillDiscountAmount('');
       await Promise.all([load(), loadFloorTables()]);
     } catch (err) {
+      if (anyKhata) loadCustomers();
       if (!markExpiredError(err)) toast.error(tableErrorText(err, t));
       // Same reasoning as the single-bill settle above: reload regardless, because some of
       // these bills may already be real. A guest or two settled and a step in the middle
@@ -1754,6 +1806,11 @@ export default function TablesPage() {
       toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(g.index) }));
       return;
     }
+    const khataMoney = groupKhataMoney(g);
+    if (khataMoney && !khataMoney.valid) {
+      toast.error(t('tables.paidNowInvalid'));
+      return;
+    }
     const label = groupLabel(g.index);
     setBusy('settle');
     try {
@@ -1774,9 +1831,11 @@ export default function TablesPage() {
         }),
       });
       const amount = billData.bill.payableTotal ?? billData.bill.total;
+      if (khataMoney) loadCustomers();
       setSplitSettledReceipts([]);
       showSettled({ bill: billData.bill, customer: customerById(guestCustomers[g.index]) });
       setGuestSplitOpen(false);
+      setGuestPaid({});
       if (data.closed) {
         toast.success(t('tables.settled', { table: active.tableLabel || active.tableName, number: billData.bill.billNumber }));
         setActiveId(null);
@@ -1788,6 +1847,7 @@ export default function TablesPage() {
       }
       await Promise.all([load(), loadFloorTables()]);
     } catch (err) {
+      if (khataMoney) loadCustomers();
       if (!markExpiredError(err)) toast.error(tableErrorText(err, t));
       await Promise.all([load(), loadFloorTables()]);
     } finally {
@@ -2874,6 +2934,19 @@ export default function TablesPage() {
                                   {groupNeedsCustomer(g) && (
                                     <p className="field-hint" style={{ margin: 0 }}>{t('tables.khataCustomerHint')}</p>
                                   )}
+                                  {(guestModes[g.index] || 'cash') === 'khata' && guestCustomers[g.index] && (
+                                    <KhataPaidNow
+                                      id={`guest-paid-${g.index}`}
+                                      payable={g.payable}
+                                      value={guestPaid[g.index]?.amount ?? ''}
+                                      mode={guestPaid[g.index]?.mode || 'cash'}
+                                      onChange={(v) => setGuestPaid((p) => ({ ...p, [g.index]: { ...p[g.index], amount: v } }))}
+                                      onModeChange={(m) => setGuestPaid((p) => ({ ...p, [g.index]: { ...p[g.index], mode: m } }))}
+                                      customer={customerById(guestCustomers[g.index])}
+                                      t={t}
+                                      lang={lang}
+                                    />
+                                  )}
                                   {/* Only when someone else is still on the table — paying the
                                       only bill with food on it is just settling the table. */}
                                   {payingGroups > 1 && (
@@ -2943,6 +3016,22 @@ export default function TablesPage() {
                           {settleMode === 'khata' ? t('tables.khataCustomerHint') : t('tables.billCustomerHint')}
                         </p>
                       </div>
+
+                      {/* Kaun, then kitna diya — the counter's two khata questions, in the
+                          same order and the same card. */}
+                      {settleMode === 'khata' && settleCustomerId && (
+                        <KhataPaidNow
+                          id="table-paid-now"
+                          payable={payable}
+                          value={paidNow}
+                          mode={paidNowMode}
+                          onChange={setPaidNow}
+                          onModeChange={setPaidNowMode}
+                          customer={customerById(settleCustomerId)}
+                          t={t}
+                          lang={lang}
+                        />
+                      )}
 
                       {settleMode === 'split' && (
                         <div className="split-panel">

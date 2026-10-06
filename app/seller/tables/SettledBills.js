@@ -204,6 +204,20 @@ export function SettledBill({ entry, t, lang, whatsappOn, onPrint, onSend, onCop
             </div>
           )}
           <div className="settled-bill__sums">
+            {/* A khata bill says what changed hands and what went on the tab — "Khata ₹1,200"
+                alone read as all of it owed even when ₹500 was paid at the table. */}
+            {bill.paymentMode === 'khata' && (
+              <>
+                <p className="settled-bill__line">
+                  <span>{t('seller.paidNowGot')}</span>
+                  <span>{formatRupees(Math.min(Number(bill.amountPaid) || 0, payable), lang)}</span>
+                </p>
+                <p className="settled-bill__line">
+                  <span>{t('seller.paidNowOnKhata')}</span>
+                  <strong>{formatRupees(Math.max(0, payable - (Number(bill.amountPaid) || 0)), lang)}</strong>
+                </p>
+              </>
+            )}
             {Array.isArray(bill.payments) && bill.payments.length > 1 && (
               <p className="settled-bill__line">
                 {bill.payments.map((p) => `${payModeLabel(p.mode, t)} ${formatRupees(p.amount, lang)}`).join(' · ')}

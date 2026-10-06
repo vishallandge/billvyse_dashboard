@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import Link from 'next/link';
 import { quoteDateForDays, MAX_QUOTE_VALID_DAYS, validateQuoteForm } from '../../../lib/quoteValidity';
 import { useRouter } from 'next/navigation';
@@ -25,6 +25,7 @@ import { startBarcodeScanner } from '../../../lib/barcodeScanner';
 import { parseScan, scanExtras } from '../../../lib/scanCode';
 import { counterFeedback, isCounterSoundOn, setCounterSoundOn } from '../../../lib/counterFeedback';
 import { saveBillDraft, readBillDraft, clearBillDraft } from '../../../lib/billDraft';
+import { holdAppUpdate } from '../../../lib/appUpdate';
 import WhatsappSheet from '../../components/WhatsappSheet';
 import { TrashIcon, XIcon, ReceiptIcon, ClockIcon, RupeeIcon, CreditCardIcon, WalletIcon, LedgerIcon, BarcodeIcon, SwapIcon, PlusIcon, CheckCircleIcon, StarIcon, SearchIcon, UsersIcon, AlertIcon, ZapIcon, ClipboardIcon, TagIcon, CopyIcon, InfoIcon, EditIcon, CounterIcon, UndoIcon, FilterIcon, DownloadIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, SpinnerIcon, ChevronRightIcon, PrinterIcon, WhatsappIcon, SparkleIcon } from '../../components/Icons';
 import {
@@ -1041,6 +1042,12 @@ export default function SellerBillingPage() {
     return () => clearTimeout(timer);
   }, [cart, paymentMode, customerId, billDiscountPercent, billDiscountAmount, counter, user]);
 
+  // A tab on an old build reloads itself onto the new one (AppUpdater) — never with items
+  // in the cart and a customer at the counter. Keyed on the boolean, so the hold is only
+  // released when the cart actually empties: that is the moment the new screen arrives.
+  const cartBusy = cart.length > 0;
+  useEffect(() => holdAppUpdate('billing-cart', cartBusy), [cartBusy]);
+
   /**
    * "Aapka pichla bill wapas mil gaya."
    *
@@ -1825,6 +1832,49 @@ export default function SellerBillingPage() {
     setQuery('');
   }
 
+  async function addScannedCode(code) {
+    try {
+      const data = await apiFetch(`/api/seller/products/lookup?code=${encodeURIComponent(code)}`);
+      handleProductAdd(data.product, undefined, undefined, data.scan);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  /**
+   * A barcode gun firing into a quantity box.
+   *
+   * The page-level safety net (handleKeyDown) steers a gun's keystrokes into search only
+   * while nothing has focus. The cashier who just typed "2" in a line's quantity box still
+   * has focus there, so the next scan typed 8901234567890 INTO the quantity — a ₹ lakh-crore
+   * line that, with negative stock allowed, the server would bill. A gun types a whole code
+   * in a few milliseconds per character and ends with Enter; no person does. So a burst of
+   * 6+ characters under 50ms apart, closed by Enter, puts the quantity back to what it was
+   * before the burst and adds the scanned product instead.
+   */
+  const qtyBurstRef = useRef(null);
+  function handleQtyKeyDown(item, event) {
+    const now = performance.now();
+    const burst = qtyBurstRef.current;
+    if (/^[0-9a-zA-Z]$/.test(event.key)) {
+      if (!burst || burst.lineId !== item.lineId || now - burst.last > 50) {
+        qtyBurstRef.current = { lineId: item.lineId, before: item.quantity, code: event.key, last: now, fast: 0 };
+      } else {
+        burst.code += event.key;
+        burst.last = now;
+        burst.fast += 1;
+      }
+      return;
+    }
+    if (event.key === 'Enter' && burst && burst.lineId === item.lineId && burst.fast >= 5 && now - burst.last < 100) {
+      event.preventDefault();
+      qtyBurstRef.current = null;
+      updateQuantity(item.lineId, burst.before);
+      event.currentTarget.blur();
+      addScannedCode(burst.code);
+    }
+  }
+
   async function openScanner() {
     setScannerOpen(true);
     setTimeout(async () => {
@@ -1833,12 +1883,7 @@ export default function SellerBillingPage() {
           elementId: 'barcode-scanner-viewport',
           onDecode: async (decodedText) => {
             setScannerOpen(false);
-            try {
-              const data = await apiFetch(`/api/seller/products/lookup?code=${encodeURIComponent(decodedText)}`);
-              handleProductAdd(data.product, undefined, undefined, data.scan);
-            } catch (err) {
-              setError(err.message);
-            }
+            await addScannedCode(decodedText);
           },
         });
         window.__dukaanScanner = scanner;
@@ -2827,7 +2872,7 @@ export default function SellerBillingPage() {
         if (item.lineId !== lineId) return item;
         const asked = Number(rate);
         if (rate === '' || !Number.isFinite(asked) || asked < 0) return item;
-        if (item.isService) return { ...item, price: asked };
+        if (item.isService) return { ...item, price: asked, rateEdited: true };
         const base = Number(item.price) || 0;
         if (!base) return item;
         const percent = Math.min(Math.max(((base - asked) / base) * 100, 0), 100);
@@ -2996,7 +3041,20 @@ export default function SellerBillingPage() {
    */
   function cartItemsPayload() {
     return cart.map((item) =>
-      item.isService
+      // A service picked from the catalog (Veg Thali, haircut) goes up as the PRODUCT it is,
+      // so the server bills its cost, recipe and category. It used to be flattened into the
+      // nameless charge-line shape below, and every one billed at ₹0 cost — the ₹447 "profit"
+      // on ₹460 of thalis. Its rate rides along only when the counter actually changed it.
+      item.isService && item.productId && !String(item.productId).startsWith('svc:')
+        ? {
+            productId: item.productId,
+            quantity: item.quantity,
+            discountPercent: Number(item.discountPercent) || undefined,
+            modifiers: item.modifiers,
+            price: item.rateEdited ? item.price : undefined,
+            rateEdited: item.rateEdited || undefined,
+          }
+        : item.isService
         ? {
             name: item.name,
             unit: item.unit,
@@ -4258,6 +4316,7 @@ export default function SellerBillingPage() {
                           aria-label={t('seller.quantity')}
                           value={item.quantity}
                           onChange={(e) => updateQuantity(item.lineId, Number(e.target.value))}
+                          onKeyDown={(e) => handleQtyKeyDown(item, e)}
                         />
                         <button type="button" onClick={() => updateQuantity(item.lineId, Math.round((item.quantity + 1) * 1000) / 1000)}>
                           +
@@ -6183,7 +6242,10 @@ export default function SellerBillingPage() {
             ? splitLines().map((line) => `${t(`expenses.mode.${line.mode}`)} ₹${line.amount.toFixed(2)}`).join(' + ') ||
               t('seller.splitPayment')
             : { cash: t('seller.cash'), upi: t('seller.upi'), card: t('seller.card'), khata: t('nav.khata') }[paymentMode];
-        return (
+        // Portalled to <body>: rendered in place, the page panel's transform turned this
+        // `position: fixed` overlay into one sized to the panel, so the card sat jammed
+        // under the topbar (which then painted over it) instead of centred on the screen.
+        return createPortal(
           <div className="modal-overlay modal-overlay--fill" onClick={() => setConfirmOpen(false)}>
             <div className="modal-card bill-confirm" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
@@ -6287,6 +6349,7 @@ export default function SellerBillingPage() {
                         step="0.001"
                         value={item.quantity}
                         onChange={(e) => updateQuantity(item.lineId, Number(e.target.value))}
+                        onKeyDown={(e) => handleQtyKeyDown(item, e)}
                       />
                       <button
                         type="button"
@@ -6452,7 +6515,8 @@ export default function SellerBillingPage() {
                 </p>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
@@ -7053,7 +7117,13 @@ function ReturnModal({ bill, t, onSubmit, onCancel }) {
   // What the customer is actually owed for these units, which on a discounted bill is not
   // the printed line total. Mirrors utils/billTotals.js refundForQuantity so the counter
   // sees the same figure it is about to hand over.
-  const paidRatio = bill.total > 0 ? Math.min(1, (bill.payableTotal ?? bill.total) / bill.total) : 1;
+  // Measured against what the LINES add up to, not bill.total — total is already net of the
+  // counter's bill discount, so dividing by it showed ₹1,000 back on a ₹900 bill while the
+  // server refunded ₹900. Same face/paid rule as paidRatio() there, edge cases included.
+  const lineSum = (bill.items || []).reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+  const face = lineSum > 0 ? lineSum : Number(bill.total) || 0;
+  const paid = bill.payableTotal != null ? Number(bill.payableTotal) : Number(bill.total) || face;
+  const paidRatio = face <= 0 ? 1 : !(paid > 0) ? 0 : Math.min(1, paid / face);
   const lineGross = selected ? (selected.price || 0) * quantity : 0;
   const lineDiscountShare =
     selected?.discountAmount && selected.grossLineTotal
