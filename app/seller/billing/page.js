@@ -16,7 +16,8 @@ import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { getShopSocket } from '../../../lib/socket';
 import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
 import UpiQr from '../../components/UpiQr';
-import { upiLinkAmount, upiLinkIsForBill } from '../../../lib/upi';
+import { billUpiExpected, checkBillUpiLink } from '../../../lib/upi';
+import QrCheck from '../../components/QrCheck';
 import RowMenu from '../../components/RowMenu';
 import ThermalReceipt from '../../components/ThermalReceipt';
 import KotTicket from '../../components/KotTicket';
@@ -492,6 +493,10 @@ export default function SellerBillingPage() {
   const [receipt, setReceipt] = useState(null);
   const [receiptText, setReceiptText] = useState('');
   const [receiptUpiLink, setReceiptUpiLink] = useState(null);
+  // Where the receipt's links (pay QR, bill link, slip text) stand: 'loading' | 'ready' |
+  // 'failed'. Without it a failed fetch looked exactly like "this shop has no UPI ID" — the
+  // QR just never came, with nothing on screen saying why or how to get it back.
+  const [receiptLinksState, setReceiptLinksState] = useState('loading');
   // True only while the "UPI paisa mil gaya" copy is being printed — see handlePrintPaidCopy.
   const [paidCopy, setPaidCopy] = useState(false);
   // The customer's own no-login link to the bill on screen — printed as a QR on the slip
@@ -3009,6 +3014,7 @@ export default function SellerBillingPage() {
     setReceiptText('');
     setReceiptUpiLink(null);
     setReceiptBillLink(null);
+    setReceiptLinksState('ready');
     setShareLinks(null);
     resetCapture();
     setProducts((prev) =>
@@ -3493,20 +3499,7 @@ export default function SellerBillingPage() {
         paymentMode === 'cash' && cashReceivedValue > 0 ? { received: cashReceivedValue, change: changeDue } : null
       );
       rememberQuickPicks(cart);
-      const billId = data.bill._id;
-      apiFetch(`/api/seller/bills/${billId}/receipt-text`)
-        .then((r) => {
-          // A newer bill is already on screen: this answer belongs to the old one. Using it
-          // would put the old bill's QR (and amount) on the new bill's slip.
-          if (receiptIdRef.current !== billId) return;
-          setReceiptText(r.text);
-          setReceiptUpiLink(r.upiLink || null);
-          setReceiptBillLink(r.billLink || null);
-          autoPrintReceipt(r.text);
-        })
-        .catch(() => {
-          if (receiptIdRef.current === billId) autoPrintReceipt('');
-        });
+      loadReceiptLinks(data.bill, { autoPrint: true });
       clearCartAfterBill();
       setConfirmOpen(false);
       // A today-scoped reload recounts the day for us; while the panel is parked on a
@@ -3533,6 +3526,44 @@ export default function SellerBillingPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /**
+   * Fetches the receipt's pay QR link, bill link and slip text for `bill`, and (after a sale)
+   * hands the slip to the auto-printer once they are in.
+   *
+   * Every answer is checked against the bill on screen first (receiptIdRef): an answer that
+   * lands after the next bill came up belongs to the old bill and is dropped — using it put the
+   * old bill's QR and amount on the new bill's slip.
+   *
+   * A failure is said, not swallowed: the QR area shows "QR load nahi hua" with a retry. And a
+   * UPI bill is not auto-printed without its QR — a slip the customer cannot scan is the one
+   * thing the counter must not hand over silently. Other bills still print (only the download
+   * QR is missing, and the bill itself is complete).
+   */
+  function loadReceiptLinks(bill, { autoPrint = false } = {}) {
+    const billId = bill._id;
+    setReceiptLinksState('loading');
+    return apiFetch(`/api/seller/bills/${billId}/receipt-text`)
+      .then((r) => {
+        if (receiptIdRef.current !== billId) return;
+        setReceiptText(r.text);
+        setReceiptUpiLink(r.upiLink || null);
+        setReceiptBillLink(r.billLink || null);
+        setReceiptLinksState('ready');
+        if (autoPrint) autoPrintReceipt(r.text);
+      })
+      .catch(() => {
+        if (receiptIdRef.current !== billId) return;
+        setReceiptLinksState('failed');
+        if (autoPrint && !slipCarriesUpiQr(bill)) autoPrintReceipt('');
+      });
+  }
+
+  // Whether this bill's printed slip is meant to carry a pay QR — a bill still owed by UPI,
+  // with the pay QR left on in Settings → Printers. Only such a slip waits for its QR.
+  function slipCarriesUpiQr(bill) {
+    return Boolean(bill) && !bill.offline && billUpiExpected(bill) > 0 && getPrinterSettings().upiQr !== false;
   }
 
   function resetCapture() {
@@ -3640,7 +3671,16 @@ export default function SellerBillingPage() {
    * or if that fails — the Print screen, where the body class makes the stylesheet show
    * only the portalled thermal receipt.
    */
-  function handlePrint() {
+  function handlePrint(options) {
+    // The paid copy carries no pay QR at all, so it never waits for one.
+    const paid = options?.paidCopy === true;
+    // A UPI bill whose QR has not arrived would print without it — the customer could not
+    // scan to pay. Say so and fetch it again instead; the next press prints the full slip.
+    if (!paid && slipCarriesUpiQr(receipt) && receiptLinksState !== 'ready') {
+      toast.error(t('seller.qrNotLoaded'));
+      if (receiptLinksState === 'failed') loadReceiptLinks(receipt);
+      return Promise.resolve('skipped');
+    }
     return printSlip({
       shop: user,
       role: 'receipt',
@@ -3690,7 +3730,7 @@ export default function SellerBillingPage() {
       window.removeEventListener('afterprint', reset);
     };
     try {
-      const how = await handlePrint();
+      const how = await handlePrint({ paidCopy: true });
       // The Print screen may still be reading the page after window.print() returns (phones
       // do), so the paid copy stays on until the dialog is done with it.
       if (how === 'system') window.addEventListener('afterprint', reset);
@@ -5710,10 +5750,40 @@ export default function SellerBillingPage() {
           )}
 
           </div>
-          {!receipt.offline && receipt.paymentMode === 'upi' && (
-            // Drawn only for this bill's own link (its bill number in the note); anything else
-            // is treated as not-yet-loaded rather than shown.
-            receiptUpiLink && upiLinkIsForBill(receiptUpiLink, receipt.billNumber) ? (
+          {!receipt.offline && billUpiExpected(receipt) > 0 && (() => {
+            // The QR is drawn only when the shared check passes (this bill's number, this
+            // bill's amount); the line under it is that same check, read out of the code,
+            // so the owner can see at a glance what the customer's UPI app will show.
+            if (!receiptUpiLink) {
+              if (receiptLinksState === 'failed') {
+                return (
+                  <div className="receipt-result-qr">
+                    <p className="qr-check is-bad" role="alert">✕ {t('seller.qrNotLoaded')}</p>
+                    <button type="button" className="btn btn-secondary btn-small" onClick={() => loadReceiptLinks(receipt)}>
+                      {t('seller.qrRetry')}
+                    </button>
+                  </div>
+                );
+              }
+              if (receiptLinksState === 'loading') {
+                return (
+                  <div className="receipt-result-qr">
+                    <p className="empty-state">{t('seller.qrLoading')}</p>
+                  </div>
+                );
+              }
+              // Loaded, and the server sent no link: the shop has no UPI ID in Settings.
+              return <p className="empty-state">{t('seller.upiNotSetHint')}</p>;
+            }
+            const qrCheck = checkBillUpiLink(receiptUpiLink, receipt);
+            if (!qrCheck.ok) {
+              return (
+                <div className="receipt-result-qr">
+                  <QrCheck check={qrCheck} t={t} lang={lang} />
+                </div>
+              );
+            }
+            return (
               <div className="receipt-result-qr" ref={receiptQrRef}>
                 <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)', marginBottom: '0.4rem' }}>{t('seller.scanToPay')}</p>
                 <UpiQr key={`${receipt._id}:${receiptUpiLink}`} link={receiptUpiLink} size={180}
@@ -5725,12 +5795,11 @@ export default function SellerBillingPage() {
                       block: 'center',
                     });
                   }} />
-                <strong>{money(upiLinkAmount(receiptUpiLink))}</strong>
+                <strong>{money(qrCheck.amount)}</strong>
+                <QrCheck check={qrCheck} t={t} lang={lang} />
               </div>
-            ) : (
-              <p className="empty-state">{t('seller.upiNotSetHint')}</p>
-            )
-          )}
+            );
+          })()}
 
           </div>
 

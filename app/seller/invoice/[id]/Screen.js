@@ -29,8 +29,11 @@ import {
   INVOICE_DENSITIES,
   PRINT_MARGINS,
   DOC_KINDS,
+  docKindById,
   fitZoomFor,
 } from '../../../../lib/invoiceLabels';
+import { upiLinkAmount } from '../../../../lib/upi';
+import { formatRupees as formatQrRupees } from '../../../../lib/format';
 
 
 // Paper widths and the fit-to-width rule now live in lib/invoiceLabels.js, beside the paper
@@ -648,6 +651,31 @@ export default function InvoicePage() {
           </Link>
         </div>
       )}
+
+      {/* The owner's check on the pay QR this sheet will print — read out of the QR's own
+          link, so it says what the customer's UPI app will show. Same conditions the sheet
+          uses to draw the QR (InvoiceDocument: showUpiQr, meta.showUpiQr, not a no-payment
+          document kind); never printed. */}
+      {!loading &&
+        activeDoc?.payment?.upiLink &&
+        prefs.showUpiQr &&
+        activeDoc.meta?.showUpiQr !== false &&
+        !docKindById(sheetProps.docKind).hidePayment &&
+        (() => {
+          const amount = upiLinkAmount(activeDoc.payment.upiLink);
+          const payee = new URLSearchParams(String(activeDoc.payment.upiLink).split('?')[1] || '').get('pa') || '';
+          const expected = activeDoc.payment.upiAmount;
+          const ok = amount > 0 && (expected == null || Math.abs(amount - Number(expected)) < 0.01);
+          return ok ? (
+            <p className="qr-check is-ok invoice-noprint" style={{ textAlign: 'left' }}>
+              ✓ {t('seller.qrCheckInvoiceOk', { amount: formatQrRupees(amount), payee })}
+            </p>
+          ) : (
+            <p className="qr-check is-bad invoice-noprint" role="alert" style={{ textAlign: 'left' }}>
+              ✕ {t('seller.qrCheckWrongAmount')}
+            </p>
+          );
+        })()}
 
       <div className="invoice-actionbar invoice-noprint">
         {/* `data-trail` names this document in the breadcrumb (PageTrail.js): the heading

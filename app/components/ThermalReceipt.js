@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import UpiQr from './UpiQr';
-import { upiLinkAmount, upiLinkIsForBill } from '../../lib/upi';
+import { billUpiExpected, checkBillUpiLink, upiLinkAmount } from '../../lib/upi';
 import usePrinters from '../../lib/printer/usePrinters';
 import { getRolePrinter, printerDots } from '../../lib/printer';
 import { shopPaper } from '../../lib/printer/slip';
@@ -102,24 +102,13 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t, pa
   // through UPI (the same rule as backend utils/billUpiDue.js). A link that belongs to some
   // other bill, or carries any other figure, prints no QR at all — a missing code costs the
   // customer one question; a wrong one costs them money.
+  // One check, shared with the screen's "✓ QR sahi hai" line: lib/upi.js checkBillUpiLink.
   const upiAmount = upiLinkAmount(upiLink);
-  const returnedTotal = (receipt.returns || []).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-  const owedNow = Math.max(0, (Number(grandTotal) || 0) - returnedTotal);
-  const expectedUpi = paidCopy
-    ? 0
-    : receipt.paymentMode === 'upi'
-      ? owedNow
-      : receipt.paymentMode === 'split'
-        ? Math.min(
-            owedNow,
-            (receipt.payments || []).filter((p) => p.mode === 'upi').reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-          )
-        : 0;
+  const expectedUpi = paidCopy ? 0 : billUpiExpected(receipt);
+  // Settings → Printers can take the pay QR off paper. Turning it off never puts the download
+  // QR in its place: that one opens a page saying PAID, and this bill is not paid yet.
   const showUpiQr =
-    Boolean(upiLink) &&
-    upiLinkIsForBill(upiLink, receipt.billNumber) &&
-    expectedUpi > 0 &&
-    Math.abs(upiAmount - expectedUpi) < 0.01;
+    printerSettings.upiQr !== false && !paidCopy && Boolean(upiLink) && checkBillUpiLink(upiLink, receipt).ok;
   // What the shop's own prices saved the customer against the printed MRP — a different
   // thing from the discount above, and the line a customer actually reads twice.
   const savedAgainstMrp = (receipt.items || []).reduce(

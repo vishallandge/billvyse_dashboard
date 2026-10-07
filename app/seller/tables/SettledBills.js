@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import UpiQr from '../../components/UpiQr';
-import { upiLinkAmount, upiLinkIsForBill } from '../../../lib/upi';
+import { billUpiExpected, checkBillUpiLink } from '../../../lib/upi';
+import QrCheck from '../../components/QrCheck';
 import PhoneField from '../../components/PhoneField';
 import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { recordHref } from '../../../lib/routeId';
@@ -120,7 +121,7 @@ function useScrollIntoView(ref, key) {
   }, [key, ref]);
 }
 
-export function SettledBill({ entry, t, lang, whatsappOn, onPrint, onSend, onCopyLink, onAttachCustomer, onClose }) {
+export function SettledBill({ entry, t, lang, whatsappOn, onPrint, onSend, onCopyLink, onAttachCustomer, onRetryLinks, onClose }) {
   const ref = useRef(null);
   const bill = entry.bill;
   const [printState, setPrintState] = usePrintState(bill._id);
@@ -297,19 +298,37 @@ export function SettledBill({ entry, t, lang, whatsappOn, onPrint, onSend, onCop
           )}
         </div>
 
-        {bill.paymentMode === 'upi' && (
-          // Only this bill's own link (its number in the note), and the amount shown is the
-          // one inside the code — the words and the QR can never disagree.
-          entry.upiLink && upiLinkIsForBill(entry.upiLink, bill.billNumber) ? (
+        {billUpiExpected(bill) > 0 && (() => {
+          // Same shared check as the counter (lib/upi.js checkBillUpiLink): the QR only for
+          // this bill's own number and amount, and the owner's ✓ line read out of the code.
+          if (entry.linksFailed) {
+            return (
+              <div className="receipt-result-qr settled-bill__qr">
+                <p className="qr-check is-bad" role="alert">✕ {t('seller.qrNotLoaded')}</p>
+                {onRetryLinks && (
+                  <button type="button" className="btn btn-secondary btn-small" onClick={() => onRetryLinks(bill._id)}>
+                    {t('seller.qrRetry')}
+                  </button>
+                )}
+              </div>
+            );
+          }
+          if (entry.upiLink === undefined) return <p className="empty-state settled-bill__noqr">{t('seller.qrLoading')}</p>;
+          if (entry.upiLink === null) return <p className="empty-state settled-bill__noqr">{t('seller.upiNotSetHint')}</p>;
+          const qrCheck = checkBillUpiLink(entry.upiLink, bill);
+          return (
             <div className="receipt-result-qr settled-bill__qr">
-              <p className="settled-bill__qr-hint">{t('seller.scanToPay')}</p>
-              <UpiQr key={`${bill._id}:${entry.upiLink}`} link={entry.upiLink} size={180} />
-              <strong>{formatRupees(upiLinkAmount(entry.upiLink), lang)}</strong>
+              {qrCheck.ok && (
+                <>
+                  <p className="settled-bill__qr-hint">{t('seller.scanToPay')}</p>
+                  <UpiQr key={`${bill._id}:${entry.upiLink}`} link={entry.upiLink} size={180} />
+                  <strong>{formatRupees(qrCheck.amount, lang)}</strong>
+                </>
+              )}
+              <QrCheck check={qrCheck} t={t} lang={lang} />
             </div>
-          ) : entry.upiLink === null ? (
-            <p className="empty-state settled-bill__noqr">{t('seller.upiNotSetHint')}</p>
-          ) : null
-        )}
+          );
+        })()}
       </div>
     </div>
   );

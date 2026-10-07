@@ -16,6 +16,9 @@ import {
   sectionChargeLine,
   takeawayCharge,
   flatChargeLine,
+  extraChargeAmounts,
+  extraChargeLines,
+  extraChargesKey,
   tableBillKey,
 } from '../../../lib/tableSplit';
 import { getShopSocket } from '../../../lib/socket';
@@ -25,6 +28,8 @@ import { useLanguage } from '../../components/LanguageProvider';
 import Illustration from '../../components/Illustration';
 import { useToast } from '../../components/Toast';
 import { printSlip, qrSlotsReady } from '../../../lib/printer/slip';
+import { billUpiExpected } from '../../../lib/upi';
+import { getSettings as getPrinterSettings } from '../../../lib/printer';
 import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { SkeletonStats } from '../../components/Skeleton';
@@ -44,6 +49,7 @@ import { customerLine, customerOptionLabel } from '../../../lib/customerLabel';
 import WhatsappSheet from '../../components/WhatsappSheet';
 import { freshFetch } from '../../../lib/freshFetch';
 import ManageTables from './ManageTables';
+import ExtraCharges from './ExtraCharges';
 import { FloorTableCard, FloorMap, SeatPicker, FloorLegend, ActionStrip, HowItWorks, TableJourney, TableSeats, GroupPicker, groupLetter, legendKey, seatClassesFor } from './FloorVisuals';
 import { tableStage, tablesNeedingAction, mostUrgentStage, seatsAtTable } from '../../../lib/tableStage';
 import { useRouter } from 'next/navigation';
@@ -93,6 +99,7 @@ import { formatRupees } from '../../../lib/format';
 
 const TAKEAWAY_TYPES = ['parcel', 'delivery'];
 const SPLIT_MODES = ['cash', 'upi', 'card'];
+const NO_CHARGES = [];
 // Per-device count of how often each dish is added, for "Most added" and the empty search.
 const MENU_TALLY_KEY = 'bv:menuTally';
 const MENU_TALLY_MAX = 200;
@@ -141,6 +148,8 @@ function describeEvent(event, t) {
       return t('tables.event.settled', { number: meta.billNumber });
     case 'cancelled':
       return t('tables.event.cancelled');
+    case 'charges_changed':
+      return meta.after ? t('tables.event.chargesChanged', { charges: meta.after }) : t('tables.event.chargesRemoved');
     default:
       return event.type;
   }
@@ -552,10 +561,14 @@ export default function TablesPage() {
         const flat = takeawayCharge(o.orderType, takeawaySettings, lines);
         if (flat && !flat.free) extra = Number(flat.amount) || 0;
       }
+      // The table's bill-time extra charges (corkage, service charge…), whole — the floor
+      // tile shows what this table's one bill will say.
+      const extras = extraChargeAmounts(o.extraCharges, lines);
       const money = billMoney({
         lines: [
           ...lines.map(({ item, quantity }) => ({ price: item.price, quantity })),
           ...(extra > 0 ? [{ price: extra, quantity: 1 }] : []),
+          ...extras.map((c) => ({ price: c.amount, quantity: 1 })),
         ],
         roundOff: roundOn,
       });
@@ -602,6 +615,9 @@ export default function TablesPage() {
     : takeawayBase.kind === 'parcel'
       ? takeawaySettings?.parcelLabel || t('tables.parcelChargeDefault')
       : takeawaySettings?.deliveryLabel || t('tables.deliveryChargeDefault');
+  // Bill-time extra charges saved on this table (TableOrder.extraCharges). A stable empty
+  // array when there are none, so the memos below do not recompute on every render.
+  const activeExtraCharges = useMemo(() => active?.extraCharges || NO_CHARGES, [active?.extraCharges]);
   const takeawayTyped = takeawayDraft.trim() === '' ? NaN : Number(takeawayDraft);
   const takeawayAmount = takeawayBase && takeawayOn && !takeawayBase.free
     ? round2(Number.isFinite(takeawayTyped) && takeawayTyped >= 0 ? takeawayTyped : takeawayBase.amount)
@@ -1392,6 +1408,24 @@ export default function TablesPage() {
       .map(([mode, v]) => ({ mode, amount: round2(Number(v)) }));
   }
 
+  /**
+   * Writes the table's extra charges (the whole list) and puts the saved order on screen
+   * straight away. Throws with the server's reason, which ExtraCharges shows by the form.
+   * Every other device hears it through the socket's table:updated.
+   */
+  async function saveExtraCharges(list) {
+    if (!active) return;
+    try {
+      const data = await apiFetch(`/api/seller/table-orders/${active._id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ extraCharges: list }),
+      });
+      setOrders((current) => current.map((o) => (o._id === data.order._id ? data.order : o)));
+    } catch (err) {
+      throw new Error(tableErrorText(err, t));
+    }
+  }
+
   // Every line on the table as a { item, quantity } pair — the same shape a split group's
   // lines take, so one function turns either into a bill.
   function wholeTableLines() {
@@ -1402,17 +1436,24 @@ export default function TablesPage() {
   // this table's section has one switched on, plus the parcel/delivery charge on the one
   // bill that carries it (`withTakeaway`) — a flat charge is paid once per order, not once
   // per guest's share of it.
-  function billItemsFor(lines, { withTakeaway = true } = {}) {
+  //
+  // Then the table's bill-time extra charges (lib/tableSplit.js extraChargeAmounts): a %
+  // charge on THESE lines' food, a flat one per `extraFlat` — 'all' on the table's one or
+  // last bill, an even share on a split, 'none' on a guest leaving early.
+  function billItemsFor(lines, { withTakeaway = true, extraFlat = 'all' } = {}) {
     const items = lines.map(({ item, quantity }) => ({ productId: item.product, quantity, modifiers: item.modifiers }));
     const charge = chargeActive ? sectionChargeLine(chargeLabel, chargePercent, lines) : null;
     if (charge) items.push(charge);
     const flat = withTakeaway && takeawayAmount > 0 ? flatChargeLine(takeawayLabel, takeawayAmount, takeawayBase?.gstRate) : null;
     if (flat) items.push(flat);
+    for (const line of extraChargeLines(activeExtraCharges, lines, { flat: extraFlat })) if (line) items.push(line);
     return items;
   }
 
   // Part of the idempotency key, so a retry after a charge was changed is a new bill.
-  const chargeKey = `${chargeActive ? `c${chargePercent}` : ''}${takeawayAmount > 0 ? `t${takeawayAmount}` : ''}`;
+  const chargeKey = `${chargeActive ? `c${chargePercent}` : ''}${takeawayAmount > 0 ? `t${takeawayAmount}` : ''}${
+    activeExtraCharges.length ? `x${extraChargesKey(activeExtraCharges)}` : ''
+  }`;
 
   function groupLabel(index) {
     return (groupNames[index] || '').trim() || `${t('tables.bill')} ${index + 1}`;
@@ -1631,25 +1672,45 @@ export default function TablesPage() {
     const { groups, unbalanced } = buildGroups(active.items, allocation, splitGuestCount);
     // The parcel/delivery charge rides on the first bill that has food on it.
     const takeawayIndex = groups.find((g) => g.lines.length > 0)?.index;
+    // A flat extra charge (corkage ₹300) is shared evenly by the bills that have food on
+    // them, to the paisa (splitAmountEvenly) — the shares always add back up to the charge.
+    const paying = groups.filter((g) => g.lines.length > 0).map((g) => g.index);
+    const roundOn = user?.billingSettings?.roundOff !== false;
+    const moneyOf = (g, { takeaway, extras }) =>
+      billMoney({
+        lines: [
+          ...g.lines.map(({ item, quantity }) => ({ price: item.price, quantity })),
+          ...(g.charge > 0 ? [{ price: g.charge, quantity: 1 }] : []),
+          ...(takeaway > 0 ? [{ price: takeaway, quantity: 1 }] : []),
+          ...extras.map((c) => ({ price: c.amount, quantity: 1 })),
+        ],
+        discountPercent: Number(billDiscountPercent) || 0,
+        roundOff: roundOn,
+      }).payable;
     return {
       unbalanced,
-      groups: groups.map((g) => {
-        const charge = chargeActive ? sectionCharge(g.lines, chargePercent).amount : 0;
+      groups: groups.map((group) => {
+        const g = { ...group, charge: chargeActive ? sectionCharge(group.lines, chargePercent).amount : 0 };
         const takeaway = g.index === takeawayIndex ? takeawayAmount : 0;
-        // Each group's own bill, rounded the way that bill will be saved.
-        const money = billMoney({
-          lines: [
-            ...g.lines.map(({ item, quantity }) => ({ price: item.price, quantity })),
-            ...(charge > 0 ? [{ price: charge, quantity: 1 }] : []),
-            ...(takeaway > 0 ? [{ price: takeaway, quantity: 1 }] : []),
-          ],
-          discountPercent: Number(billDiscountPercent) || 0,
-          roundOff: user?.billingSettings?.roundOff !== false,
-        });
-        return { ...g, charge, takeaway, payable: money.payable };
+        const k = paying.indexOf(g.index);
+        const extraFlat = k >= 0 ? { index: k, count: paying.length } : 'none';
+        const extras = g.lines.length ? extraChargeAmounts(activeExtraCharges, g.lines, { flat: extraFlat }) : [];
+        // "Pay only this bill" leaves the table's flat charges (and the parcel charge) for
+        // its last bill, so it is worth a different amount — worked out here, the same way
+        // that bill will be built, so its button never says one figure and bills another.
+        const partExtras = g.lines.length ? extraChargeAmounts(activeExtraCharges, g.lines, { flat: 'none' }) : [];
+        return {
+          ...g,
+          takeaway,
+          extraFlat,
+          extras,
+          // Each group's own bill, rounded the way that bill will be saved.
+          payable: moneyOf(g, { takeaway, extras }),
+          partPayable: moneyOf(g, { takeaway: 0, extras: partExtras }),
+        };
       }),
     };
-  }, [active, guestSplitOpen, allocation, splitGuestCount, chargeActive, chargePercent, takeawayAmount, billDiscountPercent]);
+  }, [active, guestSplitOpen, allocation, splitGuestCount, chargeActive, chargePercent, takeawayAmount, billDiscountPercent, activeExtraCharges, user]);
   const guestGroups = guestSplit.groups;
 
   // Every piece of every dish must be on some bill before anything is charged.
@@ -1673,20 +1734,29 @@ export default function TablesPage() {
 
   // A guest's khata bill, read through the same rule as the whole-table card, so the two
   // can never disagree about "kitna diya, kitna baaki". Null for a guest not on khata.
-  function groupKhataMoney(g) {
+  function groupKhataMoney(g, { part = false } = {}) {
     if ((guestModes[g.index] || 'cash') !== 'khata') return null;
-    return khataSplit({ payable: g.payable, paidNow: guestPaid[g.index]?.amount ?? '', customer: customerById(guestCustomers[g.index]) });
+    return khataSplit({
+      payable: part ? g.partPayable : g.payable,
+      paidNow: guestPaid[g.index]?.amount ?? '',
+      customer: customerById(guestCustomers[g.index]),
+    });
   }
 
-  function createGroupBill(g, kind, { withTakeaway = g.takeaway > 0 } = {}) {
+  function createGroupBill(g, kind, { withTakeaway = g.takeaway > 0, extraFlat = g.extraFlat, part = false } = {}) {
     const mode = guestModes[g.index] || 'cash';
-    const khataMoney = groupKhataMoney(g);
+    const khataMoney = groupKhataMoney(g, { part });
     const paid = khataMoney && khataMoney.paid > 0 ? khataMoney.paid : 0;
     return apiFetch('/api/seller/bills', {
       method: 'POST',
       body: JSON.stringify({
-        clientBillId: tableBillKey(active._id, kind, g.lines, `${g.index}${chargeKey}${withTakeaway ? '' : 'n'}`),
-        items: billItemsFor(g.lines, { withTakeaway }),
+        clientBillId: tableBillKey(
+          active._id,
+          kind,
+          g.lines,
+          `${g.index}${chargeKey}${withTakeaway ? '' : 'n'}${typeof extraFlat === 'object' ? `s${extraFlat.index}/${extraFlat.count}` : extraFlat}`
+        ),
+        items: billItemsFor(g.lines, { withTakeaway, extraFlat }),
         paymentMode: mode,
         orderType: active.orderType,
         counter: `${active.tableLabel || active.tableName} · ${groupLabel(g.index)}`,
@@ -1806,7 +1876,7 @@ export default function TablesPage() {
       toast.error(t('tables.splitGuestNeedsCustomer', { guest: groupLabel(g.index) }));
       return;
     }
-    const khataMoney = groupKhataMoney(g);
+    const khataMoney = groupKhataMoney(g, { part: true });
     if (khataMoney && !khataMoney.valid) {
       toast.error(t('tables.paidNowInvalid'));
       return;
@@ -1821,7 +1891,9 @@ export default function TablesPage() {
         const onBill = g.lines.filter((l) => l.item._id === it._id).reduce((sum, l) => sum + l.quantity, 0);
         return onBill >= it.quantity - 1e-9;
       });
-      const billData = await createGroupBill(g, 'part', { withTakeaway: takesAll });
+      // The same goes for the table's flat extra charges (corkage ₹300): they are the table's,
+      // paid once, on its last bill. % charges are paid here on this group's own food.
+      const billData = await createGroupBill(g, 'part', { withTakeaway: takesAll, extraFlat: takesAll ? 'all' : 'none', part: !takesAll });
       const data = await apiFetch(`/api/seller/table-orders/${active._id}/settle-part`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1885,10 +1957,20 @@ export default function TablesPage() {
   async function receiptExtras(billId) {
     try {
       const r = await apiFetch(`/api/seller/bills/${billId}/receipt-text`);
-      return { upiLink: r.upiLink || null, billLink: r.billLink || null };
+      return { upiLink: r.upiLink || null, billLink: r.billLink || null, linksFailed: false };
     } catch {
-      return { upiLink: null, billLink: null };
+      // Not null: null means "this shop has no UPI ID", and a failed fetch is not that. The
+      // panel says "QR load nahi hua" with a retry, and a UPI slip is not printed without it.
+      return { upiLink: undefined, billLink: undefined, linksFailed: true };
     }
+  }
+
+  // "QR dobara load karo" — refetches one settled bill's links into whichever panel shows it.
+  async function retrySettledLinks(billId) {
+    setSettledReceipt((cur) => (cur?.bill?._id === billId ? { ...cur, linksFailed: false } : cur));
+    const extras = await receiptExtras(billId);
+    setSettledReceipt((cur) => (cur?.bill?._id === billId ? { ...cur, ...extras } : cur));
+    setSplitSettledReceipts((list) => list.map((e) => (e.bill._id === billId ? { ...e, ...extras } : e)));
   }
 
   // A settled bill on screen, its links filled in as soon as they arrive.
@@ -1905,6 +1987,18 @@ export default function TablesPage() {
    */
   async function printSettled(entry) {
     const extras = entry.billLink === undefined ? await receiptExtras(entry.bill._id) : entry;
+    if (!extras.linksFailed) {
+      // A print that had to fetch the links (first print, or a retry after a failure) leaves
+      // them on the panel too, so its QR and the slip's are the same answer.
+      setSettledReceipt((cur) => (cur?.bill?._id === entry.bill._id ? { ...cur, ...extras } : cur));
+      setSplitSettledReceipts((list) => list.map((e) => (e.bill._id === entry.bill._id ? { ...e, ...extras } : e)));
+    }
+    // A slip that should carry a pay QR is never printed without it — the customer could not
+    // scan to pay, and nobody would notice until they tried.
+    if (extras.linksFailed && billUpiExpected(entry.bill) > 0 && getPrinterSettings().upiQr !== false) {
+      toast.error(t('seller.qrNotLoaded'));
+      return 'skipped';
+    }
     // flushSync so the slip is in the DOM before printSlip reads it.
     flushSync(() => setSlip({ bill: entry.bill, upiLink: extras.upiLink || null, billLink: extras.billLink || null }));
     return printSlip({
@@ -2003,7 +2097,10 @@ export default function TablesPage() {
   // applies to the whole bill) is worked on dishes + charge here too — the number on this
   // screen has to be the number on the printed bill.
   const chargeAmount = active && chargeActive ? sectionCharge(wholeTableLines(), chargePercent).amount : 0;
-  const total = round2(itemsTotal + chargeAmount + takeawayAmount);
+  // The table's bill-time extra charges on its one bill — each its own line, like the rest.
+  const extraAmounts = active ? extraChargeAmounts(activeExtraCharges, wholeTableLines()) : [];
+  const extraTotal = round2(extraAmounts.reduce((sum, c) => sum + c.amount, 0));
+  const total = round2(itemsTotal + chargeAmount + takeawayAmount + extraTotal);
   const pendingCount = active ? active.items.filter((i) => !i.sentToKitchen).length : 0;
   // Worked out exactly as the saved bill will be — line by line, the discount, and the round
   // to the rupee this shop bills in — so the number the waiter reads out is the number printed.
@@ -2013,6 +2110,7 @@ export default function TablesPage() {
       ...(active?.items || []).map((item) => ({ price: item.price, quantity: item.quantity })),
       ...(chargeAmount > 0 ? [{ price: chargeAmount, quantity: 1 }] : []),
       ...(takeawayAmount > 0 ? [{ price: takeawayAmount, quantity: 1 }] : []),
+      ...extraAmounts.map((c) => ({ price: c.amount, quantity: 1 })),
     ],
     discountPercent: Number(billDiscountPercent) || 0,
     discountAmount: Number(billDiscountAmount) || 0,
@@ -2747,6 +2845,20 @@ export default function TablesPage() {
                     </div>
                   )}
 
+                  {/* Bill-time extra charges — corkage, cake cutting, service charge — each with
+                      its reason, saved on the table so every device bills the same. */}
+                  {active.items.length > 0 && (
+                    <ExtraCharges
+                      key={active._id}
+                      charges={activeExtraCharges}
+                      lines={wholeTableLines()}
+                      onSave={saveExtraCharges}
+                      disabled={busy !== ''}
+                      t={t}
+                      lang={lang}
+                    />
+                  )}
+
                   {guestSplitOpen && (
                     <div className="guest-split-panel">
                       <div className="guest-split-top">
@@ -2881,6 +2993,12 @@ export default function TablesPage() {
                                         <span>{formatRupees(g.takeaway, lang)}</span>
                                       </li>
                                     )}
+                                    {g.extras.map((c, ci) => (
+                                      <li className="is-charge" key={`x${ci}`}>
+                                        <span>{c.name}</span>
+                                        <span>{formatRupees(c.amount, lang)}</span>
+                                      </li>
+                                    ))}
                                   </ul>
                                   <div className="segmented-mini" role="group">
                                     {['cash', 'upi', 'card', 'khata'].map((mode) => (
@@ -2957,7 +3075,7 @@ export default function TablesPage() {
                                       disabled={busy !== ''}
                                       onClick={() => handlePartSettle(g)}
                                     >
-                                      <ReceiptIcon size={15} /> {t('tables.payThisOnly')}
+                                      <ReceiptIcon size={15} /> {t('tables.payThisOnlyAmount', { amount: formatRupees(g.partPayable, lang) })}
                                     </button>
                                   )}
                                 </>
@@ -3458,6 +3576,7 @@ export default function TablesPage() {
           onSend={handleSendBill}
           onCopyLink={copySettledLink}
           onAttachCustomer={attachSettledCustomer}
+          onRetryLinks={retrySettledLinks}
           onClose={() => setSettledReceipt(null)}
         />
       )}

@@ -25,6 +25,7 @@ import {
   setTextScale,
   setCompact,
   setBillQr,
+  setUpiQr,
   setPrintLogo,
   setLogoLook,
   printElement,
@@ -219,6 +220,13 @@ export default function PrinterSettings() {
       </div>
       <PrintLogoSwitch settings={settings} />
       <LogoLook settings={settings} />
+      <div className="printer-auto">
+        <Switch checked={settings.upiQr !== false} onChange={(on) => setUpiQr(on)} label={t('printer.upiQr')} id="printer-upi-qr" />
+        <span>
+          <strong>{t('printer.upiQr')}</strong>
+          <small>{t('printer.upiQrHint')}</small>
+        </span>
+      </div>
       <div className="printer-auto">
         <Switch checked={settings.billQr !== false} onChange={(on) => setBillQr(on)} label={t('printer.billQr')} id="printer-bill-qr" />
         <span>
