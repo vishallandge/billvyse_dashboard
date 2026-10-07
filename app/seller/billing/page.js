@@ -16,6 +16,7 @@ import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { getShopSocket } from '../../../lib/socket';
 import { useDashboardUser, useHiddenNav } from '../../components/DashboardShell';
 import UpiQr from '../../components/UpiQr';
+import { upiLinkAmount, upiLinkIsForBill } from '../../../lib/upi';
 import RowMenu from '../../components/RowMenu';
 import ThermalReceipt from '../../components/ThermalReceipt';
 import KotTicket from '../../components/KotTicket';
@@ -491,6 +492,8 @@ export default function SellerBillingPage() {
   const [receipt, setReceipt] = useState(null);
   const [receiptText, setReceiptText] = useState('');
   const [receiptUpiLink, setReceiptUpiLink] = useState(null);
+  // True only while the "UPI paisa mil gaya" copy is being printed — see handlePrintPaidCopy.
+  const [paidCopy, setPaidCopy] = useState(false);
   // The customer's own no-login link to the bill on screen — printed as a QR on the slip
   // and copied from the receipt menu. Comes back with the receipt text; see handleCopyBillLink.
   const [receiptBillLink, setReceiptBillLink] = useState(null);
@@ -632,6 +635,16 @@ export default function SellerBillingPage() {
   const receiptRef = useRef(null);
   const receiptQrRef = useRef(null);
   const receiptQrScrolledRef = useRef(null);
+  /**
+   * The bill on screen RIGHT NOW, set in the same breath as setReceipt.
+   *
+   * Every fetch for a receipt (its QR links, its text, its share sheet, its link) is checked
+   * against this before its answer is used. Without it, two bills rung up back to back raced:
+   * bill A's links arriving after bill B was already on screen landed on B — B's slip printed
+   * A's QR, A's amount. A state value cannot do this job: the answer can land before React has
+   * rendered B, while state still says A.
+   */
+  const receiptIdRef = useRef(null);
   // The grid whose height is pinned to whatever the viewport has left — see the
   // measurement effect below.
   const posLayoutRef = useRef(null);
@@ -2990,6 +3003,7 @@ export default function SellerBillingPage() {
       .filter(Boolean);
     const offlineTotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
 
+    receiptIdRef.current = null;
     setReceipt({ offline: true, items, total: offlineTotal, paymentMode: payload.paymentMode });
     setBillOutcome(null);
     setReceiptText('');
@@ -3435,6 +3449,7 @@ export default function SellerBillingPage() {
     setSubmitting(true);
     try {
       const data = await apiFetch('/api/seller/bills', { method: 'POST', body: JSON.stringify(payload) });
+      receiptIdRef.current = data.bill._id;
       setReceipt(data.bill);
       counterFeedback('done');
       /**
@@ -3469,6 +3484,7 @@ export default function SellerBillingPage() {
       setBelowCostPrompt(null);
       setShareLinks(null);
     resetCapture();
+      setReceiptText('');
       setReceiptUpiLink(null);
       setReceiptBillLink(null);
       // The change is owed after the bill exists, so it has to outlive the cart that was
@@ -3477,14 +3493,20 @@ export default function SellerBillingPage() {
         paymentMode === 'cash' && cashReceivedValue > 0 ? { received: cashReceivedValue, change: changeDue } : null
       );
       rememberQuickPicks(cart);
-      apiFetch(`/api/seller/bills/${data.bill._id}/receipt-text`)
+      const billId = data.bill._id;
+      apiFetch(`/api/seller/bills/${billId}/receipt-text`)
         .then((r) => {
+          // A newer bill is already on screen: this answer belongs to the old one. Using it
+          // would put the old bill's QR (and amount) on the new bill's slip.
+          if (receiptIdRef.current !== billId) return;
           setReceiptText(r.text);
           setReceiptUpiLink(r.upiLink || null);
           setReceiptBillLink(r.billLink || null);
           autoPrintReceipt(r.text);
         })
-        .catch(() => autoPrintReceipt(''));
+        .catch(() => {
+          if (receiptIdRef.current === billId) autoPrintReceipt('');
+        });
       clearCartAfterBill();
       setConfirmOpen(false);
       // A today-scoped reload recounts the day for us; while the panel is parked on a
@@ -3531,6 +3553,7 @@ export default function SellerBillingPage() {
   async function handleCaptureNumber(event) {
     event.preventDefault();
     if (!receipt?._id) return;
+    const billId = receipt._id;
     setCaptureError('');
     setCapturing(true);
     try {
@@ -3543,7 +3566,7 @@ export default function SellerBillingPage() {
       setCaptureName('');
       // The bill now names somebody, so the receipt on screen should say so too — otherwise
       // the next thing the cashier does (share, print) reads the stale one.
-      setReceipt((current) => (current ? { ...current, customer: data.customer } : current));
+      setReceipt((current) => (current && current._id === billId ? { ...current, customer: data.customer } : current));
       // Just the refetch, not the sheet: the cashier typed a number to save it, and having
       // a dialog open itself on top of the receipt they were reading is not what they asked
       // for. The green button is right there when they do want it.
@@ -3565,8 +3588,12 @@ export default function SellerBillingPage() {
    */
   async function loadShareLinks() {
     if (!receipt) return null;
+    const billId = receipt._id;
     try {
-      const data = await apiFetch(`/api/seller/bills/${receipt._id}/share`);
+      const data = await apiFetch(`/api/seller/bills/${billId}/share`);
+      // Another bill came up meanwhile — this sheet (and the UPI link in its message) is the
+      // old bill's, and must not be sent to the new customer.
+      if (receiptIdRef.current !== billId) return null;
       setShareLinks(data);
       return data;
     } catch (err) {
@@ -3596,9 +3623,10 @@ export default function SellerBillingPage() {
    */
   async function handleCopyBillLink() {
     if (!receipt?._id) return;
+    const billId = receipt._id;
     try {
-      const url = receiptBillLink || (await apiFetch(`/api/seller/bills/${receipt._id}/link`)).url;
-      if (!url) return;
+      const url = receiptBillLink || (await apiFetch(`/api/seller/bills/${billId}/link`)).url;
+      if (!url || receiptIdRef.current !== billId) return;
       setReceiptBillLink(url);
       await navigator.clipboard.writeText(url);
       toast.success(t('seller.billLinkCopied'));
@@ -3623,6 +3651,53 @@ export default function SellerBillingPage() {
       onFallback: (message) => toast.info(message),
       t,
     });
+  }
+
+  /**
+   * The UPI customer's download slip, printed only after the shopkeeper says the money came.
+   *
+   * The normal UPI slip carries the pay QR and deliberately no download QR: the bill page that
+   * QR opens says PAID, and a customer who scans the wrong code could show "PAID" without
+   * paying. Once the shopkeeper has seen the amount land in their own UPI app, that risk is
+   * gone — this copy drops the pay QR and carries the download QR instead. Asked first, every
+   * time, because pressing it is the shopkeeper's word that the money is in.
+   */
+  async function handlePrintPaidCopy() {
+    if (!receipt || receipt.paymentMode !== 'upi') return;
+    const ok = await confirm({
+      tone: 'warning',
+      title: t('seller.paidCopyTitle'),
+      body: t('seller.paidCopyConfirm', { amount: money(receipt.payableTotal ?? receipt.total) }),
+      confirmLabel: t('seller.paidCopyAction'),
+    });
+    if (!ok) return;
+    const billId = receipt._id;
+    let url = receiptBillLink;
+    if (!url) {
+      try {
+        url = (await apiFetch(`/api/seller/bills/${billId}/link`)).url;
+        if (receiptIdRef.current !== billId) return;
+        setReceiptBillLink(url);
+      } catch (err) {
+        toast.error(err.message);
+        return;
+      }
+    }
+    if (receiptIdRef.current !== billId) return;
+    flushSync(() => setPaidCopy(true));
+    const reset = () => {
+      setPaidCopy(false);
+      window.removeEventListener('afterprint', reset);
+    };
+    try {
+      const how = await handlePrint();
+      // The Print screen may still be reading the page after window.print() returns (phones
+      // do), so the paid copy stays on until the dialog is done with it.
+      if (how === 'system') window.addEventListener('afterprint', reset);
+      else reset();
+    } catch {
+      reset();
+    }
   }
 
   /**
@@ -4655,7 +4730,10 @@ export default function SellerBillingPage() {
                       type="button"
                       className="icon-btn"
                       data-tip={t('common.close')}
-                      onClick={() => setReceipt(null)}
+                      onClick={() => {
+                        receiptIdRef.current = null;
+                        setReceipt(null);
+                      }}
                     >
                       <XIcon size={17} />
                     </button>
@@ -5536,6 +5614,9 @@ export default function SellerBillingPage() {
                 <button className="btn btn-secondary btn-small" onClick={handleShare}><WhatsappIcon size={17} /> {t('seller.shareWhatsapp')}</button>
                 <RowMenu tip={t('common.moreActions')} items={[
                   { label: t('seller.copyBillLink'), icon: <CopyIcon size={15} />, onClick: handleCopyBillLink },
+                  ...(receipt.paymentMode === 'upi'
+                    ? [{ label: t('seller.paidCopyAction'), icon: <PrinterIcon size={15} />, onClick: handlePrintPaidCopy }]
+                    : []),
                 ]} />
                 <PrinterStatusChip role="receipt" />
               </div>
@@ -5630,7 +5711,9 @@ export default function SellerBillingPage() {
 
           </div>
           {!receipt.offline && receipt.paymentMode === 'upi' && (
-            receiptUpiLink ? (
+            // Drawn only for this bill's own link (its bill number in the note); anything else
+            // is treated as not-yet-loaded rather than shown.
+            receiptUpiLink && upiLinkIsForBill(receiptUpiLink, receipt.billNumber) ? (
               <div className="receipt-result-qr" ref={receiptQrRef}>
                 <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)', marginBottom: '0.4rem' }}>{t('seller.scanToPay')}</p>
                 <UpiQr key={`${receipt._id}:${receiptUpiLink}`} link={receiptUpiLink} size={180}
@@ -5642,7 +5725,7 @@ export default function SellerBillingPage() {
                       block: 'center',
                     });
                   }} />
-                <strong>{money(receipt.payableTotal ?? receipt.total)}</strong>
+                <strong>{money(upiLinkAmount(receiptUpiLink))}</strong>
               </div>
             ) : (
               <p className="empty-state">{t('seller.upiNotSetHint')}</p>
@@ -5691,7 +5774,7 @@ export default function SellerBillingPage() {
               )}
               {capturedName && <p className="bill-capture-done"><CheckCircleIcon size={15} /> {t('seller.captureSaved', { name: capturedName })}</p>}
 
-              <ThermalReceipt receipt={receipt} shop={user} upiLink={receiptUpiLink} billLink={receiptBillLink} t={t} />
+              <ThermalReceipt receipt={receipt} shop={user} upiLink={receiptUpiLink} billLink={receiptBillLink} t={t} paidCopy={paidCopy} />
               {biz.runsTables && <KotTicket kot={kotSlip?.kot} order={kotSlip?.order} shop={user} t={t} />}
             </>
           )}

@@ -1937,13 +1937,14 @@ export default function TablesPage() {
    */
   async function attachSettledCustomer(phone, name) {
     if (!settledReceipt?.bill?._id) return;
-    const data = await apiFetch(`/api/seller/bills/${settledReceipt.bill._id}/customer`, {
+    const billId = settledReceipt.bill._id;
+    const data = await apiFetch(`/api/seller/bills/${billId}/customer`, {
       method: 'PATCH',
       body: JSON.stringify({ phone, name: name || undefined }),
     });
     const customer = data.customer;
     if (customer?.id) setCustomers((list) => (list.some((c) => c.id === customer.id) ? list : [customer, ...list]));
-    setSettledReceipt((cur) => (cur ? { ...cur, customer } : cur));
+    setSettledReceipt((cur) => (cur?.bill?._id === billId ? { ...cur, customer } : cur));
     toast.success(t('seller.captureSaved', { name: customer?.name || phone }));
   }
 

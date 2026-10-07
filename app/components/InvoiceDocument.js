@@ -1,6 +1,7 @@
 'use client';
 
 import UpiQr from './UpiQr';
+import { upiLinkAmount } from '../../lib/upi';
 import { formatRupees, formatQty } from '../../lib/format';
 import { labelsFor, docKindById, renumberFor } from '../../lib/invoiceLabels';
 
@@ -124,6 +125,9 @@ export default function InvoiceDocument({
   showCustomerSign = false,
   showOutstanding = true,
   showQrPay = true,
+  // The customer's "download this bill" QR (invoice.billLink). The server sends a link only
+  // for a bill with nothing left to pay, so it never shares a page with the pay QR.
+  showBillQr = true,
   extras = null,
 }) {
   if (!invoice) return null;
@@ -171,6 +175,11 @@ export default function InvoiceDocument({
   // is the entire reason it is printable at all.
   const cancelled = Boolean(meta.isCancelled);
   const hidePayment = Boolean(kind.hidePayment);
+  // The pay QR is drawn only when the amount inside it is the amount printed beside it
+  // (payment.upiAmount, from backend utils/billUpiDue.js). Documents that predate that
+  // field keep their QR as before.
+  const upiQrAmount = upiLinkAmount(payment?.upiLink);
+  const upiQrVerified = payment?.upiAmount == null || Math.abs(upiQrAmount - Number(payment.upiAmount)) < 0.01;
   const stamp = cancelled
     ? t('cancelled')
     : !hidePayment && !kind.hideStamp
@@ -942,14 +951,24 @@ export default function InvoiceDocument({
 
       <footer className="inv-foot">
         <div className="inv-foot-pay">
-          {showUpiQr && showQrPay && !hidePayment && payment.upiLink && meta.showUpiQr && (
+          {showUpiQr && showQrPay && !hidePayment && payment.upiLink && meta.showUpiQr && upiQrVerified && (
             <div className="inv-qr">
               <UpiQr link={payment.upiLink} size={104} />
               <span>
                 {t('scanToPay', {
-                  amount: totals.balanceDue > 0 ? money(totals.balanceDue) : money(totals.grandTotal),
+                  // The amount inside the QR, from the server (utils/billUpiDue.js) — the
+                  // words and the code must never disagree.
+                  amount: money(
+                    payment.upiAmount ?? (totals.balanceDue > 0 ? totals.balanceDue : totals.grandTotal)
+                  ),
                 })}
               </span>
+            </div>
+          )}
+          {showBillQr && !hidePayment && invoice.billLink && (
+            <div className="inv-qr">
+              <UpiQr link={invoice.billLink} size={104} />
+              <span>{t('scanToDownload')}</span>
             </div>
           )}
           {meta.jurisdiction && <p className="inv-jurisdiction">{t('jurisdiction', { place: meta.jurisdiction })}</p>}

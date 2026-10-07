@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import UpiQr from './UpiQr';
+import { upiLinkAmount, upiLinkIsForBill } from '../../lib/upi';
 import usePrinters from '../../lib/printer/usePrinters';
 import { getRolePrinter, printerDots } from '../../lib/printer';
 import { shopPaper } from '../../lib/printer/slip';
@@ -51,7 +52,10 @@ function expiryMonth(value) {
   return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(-2)}`;
 }
 
-export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) {
+// `paidCopy`: the copy printed AFTER the shopkeeper has seen the UPI money arrive — no pay
+// QR (it is paid), and the customer's download QR in its place. Only ever set by a button the
+// shopkeeper presses after confirming the payment; never the default slip.
+export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t, paidCopy = false }) {
   // Portals need the DOM; only render after mount to stay SSR-safe.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -90,6 +94,32 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
     (receipt.itemDiscountTotal || 0);
   const roundOff = receipt.roundOff || 0;
   const grandTotal = receipt.payableTotal ?? receipt.total;
+  // The pay QR rides on a UPI bill, and on a split bill for its UPI part. The amount printed
+  // under it is read straight OUT of the link the QR encodes — so the number the customer
+  // reads and the number their UPI app shows can never be two different figures.
+  //
+  // Verified before it is drawn: the amount in the link must equal what THIS bill still owes
+  // through UPI (the same rule as backend utils/billUpiDue.js). A link that belongs to some
+  // other bill, or carries any other figure, prints no QR at all — a missing code costs the
+  // customer one question; a wrong one costs them money.
+  const upiAmount = upiLinkAmount(upiLink);
+  const returnedTotal = (receipt.returns || []).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  const owedNow = Math.max(0, (Number(grandTotal) || 0) - returnedTotal);
+  const expectedUpi = paidCopy
+    ? 0
+    : receipt.paymentMode === 'upi'
+      ? owedNow
+      : receipt.paymentMode === 'split'
+        ? Math.min(
+            owedNow,
+            (receipt.payments || []).filter((p) => p.mode === 'upi').reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+          )
+        : 0;
+  const showUpiQr =
+    Boolean(upiLink) &&
+    upiLinkIsForBill(upiLink, receipt.billNumber) &&
+    expectedUpi > 0 &&
+    Math.abs(upiAmount - expectedUpi) < 0.01;
   // What the shop's own prices saved the customer against the printed MRP — a different
   // thing from the discount above, and the line a customer actually reads twice.
   const savedAgainstMrp = (receipt.items || []).reduce(
@@ -234,11 +264,12 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
         )}
       </div>
 
-      {receipt.paymentMode === 'upi' && upiLink && (
+      {showUpiQr && (
         // data-print-mm: the QR keeps this real size on paper whatever the text size — the
         // smallest that still scans reliably off a phone camera (see lib/printer/raster.js).
         <div className="tr-qr tr-qr-upi" data-print-mm="32">
           <UpiQr link={upiLink} size={150} />
+          {upiAmount > 0 && <div className="tr-line"><strong>{money(upiAmount)}</strong></div>}
           <div className="tr-line">{t('seller.scanToPay')}</div>
         </div>
       )}
@@ -246,8 +277,11 @@ export default function ThermalReceipt({ receipt, shop, upiLink, billLink, t }) 
       {/* The customer's own link to this bill (no login, PDF download). A thermal slip
           fades in a month and gets lost sooner; the QR is how a warranty claim or a return
           still finds the real bill. Not on a UPI-pending slip, which already carries a QR
-          the customer has to scan first — two codes on one slip get scanned in the wrong order. */}
-      {showBillQr && billLink && !(receipt.paymentMode === 'upi' && upiLink) && (
+          the customer has to scan first — two codes on one slip get scanned in the wrong order.
+          Keyed on the money still owed by UPI, not on whether a pay QR got drawn: the page this
+          opens says PAID, so a UPI bill whose pay QR is missing (no UPI ID in Settings) must
+          not hand the customer a "PAID" screen to show instead of paying. */}
+      {(showBillQr || paidCopy) && billLink && expectedUpi === 0 && (
         <div className="tr-qr tr-qr-bill" data-print-mm="28">
           <UpiQr link={billLink} size={110} />
           <div className="tr-line">{t('seller.billLinkScan')}</div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import UpiQr from '../../components/UpiQr';
+import { upiLinkAmount, upiLinkIsForBill } from '../../../lib/upi';
 import PhoneField from '../../components/PhoneField';
 import PrinterStatusChip from '../../components/PrinterStatusChip';
 import { recordHref } from '../../../lib/routeId';
@@ -297,11 +298,13 @@ export function SettledBill({ entry, t, lang, whatsappOn, onPrint, onSend, onCop
         </div>
 
         {bill.paymentMode === 'upi' && (
-          entry.upiLink ? (
+          // Only this bill's own link (its number in the note), and the amount shown is the
+          // one inside the code — the words and the QR can never disagree.
+          entry.upiLink && upiLinkIsForBill(entry.upiLink, bill.billNumber) ? (
             <div className="receipt-result-qr settled-bill__qr">
               <p className="settled-bill__qr-hint">{t('seller.scanToPay')}</p>
               <UpiQr key={`${bill._id}:${entry.upiLink}`} link={entry.upiLink} size={180} />
-              <strong>{formatRupees(payable, lang)}</strong>
+              <strong>{formatRupees(upiLinkAmount(entry.upiLink), lang)}</strong>
             </div>
           ) : entry.upiLink === null ? (
             <p className="empty-state settled-bill__noqr">{t('seller.upiNotSetHint')}</p>

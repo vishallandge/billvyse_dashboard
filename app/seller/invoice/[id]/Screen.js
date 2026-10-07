@@ -20,7 +20,7 @@ import WhatsappSheet from '../../../components/WhatsappSheet';
 import PrinterStatusChip from '../../../components/PrinterStatusChip';
 import usePrinters from '../../../../lib/printer/usePrinters';
 import { errorKey, getRolePrinter, printElement } from '../../../../lib/printer';
-import { printInvoiceSheet } from '../../../../lib/printer/slip';
+import { invoiceQrReady, printInvoiceSheet, waitFor } from '../../../../lib/printer/slip';
 import {
   INVOICE_TEMPLATES,
   INVOICE_THEMES,
@@ -55,6 +55,8 @@ const DEFAULT_PREFS = {
   showSignature: true,
   showBank: true,
   showUpiQr: true,
+  // The customer's download QR on a paid bill. Kept on this device like showHsn.
+  showBillQr: true,
   showHsn: true,
   showMrp: false,
   showDiscount: true,
@@ -515,14 +517,21 @@ export default function InvoicePage() {
    * `@page { size: 80mm auto }` is not valid CSS, so without this Chrome used the driver's
    * 80 × 297mm page and fed out twenty centimetres of blank roll after every bill.
    */
-  function openPrintScreen() {
+  async function openPrintScreen() {
     const margin = PRINT_MARGINS.find((option) => option.id === prefs.margin) || PRINT_MARGINS[0];
+    // The QR codes are drawn a moment after the sheet; the Print screen copies the page as it
+    // stands, so it waits for them rather than printing a bill with a blank where the QR goes.
+    const sheet = document.querySelector('.invoice-copy');
+    if (sheet) await waitFor(() => invoiceQrReady(sheet));
     printInvoiceSheet({ paper: prefs.paper, marginMm: margin.mm });
   }
 
   async function handlePrintInvoice() {
+    // While the next bill is loading the sheet on screen is still the previous one — printing
+    // now would hand this customer the last customer's bill and QR.
+    if (loading || !invoice) return;
     if (!directPrinter) {
-      openPrintScreen();
+      await openPrintScreen();
       return;
     }
     setPrintingDirect(true);
@@ -530,7 +539,7 @@ export default function InvoicePage() {
       const sheet = document.querySelector('.invoice-copy');
       await printElement(directPrinter.id, sheet?.firstElementChild || sheet, {
         interactive: true,
-        ready: (node) => Array.from(node.querySelectorAll('.inv-qr')).every((slot) => slot.querySelector('img')),
+        ready: invoiceQrReady,
       });
     } catch (err) {
       toast.info(t('printer.directFailed', { name: directPrinter.name, reason: t(errorKey(err)) }));
@@ -567,6 +576,7 @@ export default function InvoicePage() {
     showSignature: prefs.showSignature,
     showBank: prefs.showBank,
     showUpiQr: prefs.showUpiQr,
+    showBillQr: prefs.showBillQr,
     showHsn: prefs.showHsn,
     showMrp: prefs.showMrp,
     showDiscount: prefs.showDiscount,
@@ -674,7 +684,7 @@ export default function InvoicePage() {
             />
           )}
           {isThermal && <PrinterStatusChip role="receipt" />}
-          <button type="button" className="btn btn-primary btn-small" onClick={handlePrintInvoice} disabled={!invoice || printingDirect}>
+          <button type="button" className="btn btn-primary btn-small" onClick={handlePrintInvoice} disabled={!invoice || loading || printingDirect}>
             <PrinterIcon size={15} /> {directPrinter ? t('printer.printOn', { name: directPrinter.name }) : t('seller.invoicePrintOrPdf')}
           </button>
         </div>
@@ -873,6 +883,7 @@ export default function InvoicePage() {
                 {toggle('showSignature', 'seller.invoiceSignature')}
                 {toggle('showBank', 'seller.invoiceBank')}
                 {toggle('showUpiQr', 'seller.invoiceUpiQr')}
+                {toggle('showBillQr', 'seller.invoiceBillQr')}
                 {toggle('showWatermark', 'seller.invoiceWatermark')}
                 {toggle('showSavings', 'seller.invoiceSavings')}
                 {toggle('showOutstanding', 'seller.invoiceOutstanding')}
