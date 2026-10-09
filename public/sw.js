@@ -24,23 +24,42 @@ self.addEventListener('fetch', (event) => {
     })());
     return;
   }
-  event.respondWith(fetch(event.request).catch(async () => {
-    // Only document navigations get HTML; API and asset failures retain a 503.
-    if (event.request.mode === 'navigate') {
-      const cache = await caches.open(OFFLINE_CACHE);
-      const page = await cache.match(OFFLINE_PAGE);
-      if (page) return new Response(await page.text(), {
+  // A navigation that reaches the server while it is restarting onto a new deploy gets
+  // the proxy's 502/503/504 (or Cloudflare's 52x) page — a dead end with no BillVyse
+  // code in it, which an installed app window kept showing until someone knew to press
+  // Ctrl+Shift+R. The pause page instead, which retries by itself every few seconds and
+  // opens the real page the moment the server answers again.
+  event.respondWith((async () => {
+    const isPage = event.request.mode === 'navigate';
+    try {
+      const response = await fetch(event.request);
+      if (isPage && (response.status >= 502 && response.status <= 504 || response.status >= 520 && response.status <= 524)) {
+        const page = await pausePage();
+        if (page) return page;
+      }
+      return response;
+    } catch {
+      // Only document navigations get HTML; API and asset failures retain a 503.
+      const page = isPage && await pausePage();
+      if (page) return page;
+      return new Response('Connection unavailable. Please try again.', {
         status: 503,
-        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+        statusText: 'Service Unavailable',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       });
     }
-    return new Response('Connection unavailable. Please try again.', {
-      status: 503,
-      statusText: 'Service Unavailable',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
-  }));
+  })());
 });
+
+async function pausePage() {
+  const cache = await caches.open(OFFLINE_CACHE);
+  const page = await cache.match(OFFLINE_PAGE);
+  if (!page) return null;
+  return new Response(await page.text(), {
+    status: 503,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Push notifications

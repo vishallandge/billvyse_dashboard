@@ -67,7 +67,21 @@ const config = {
          */
         trailingSlash: true,
       }
-    : {}),
+    : {
+        /**
+         * The two files an open app uses to notice a deploy must never be answered from a
+         * cache. sw.js went out with `max-age=14400`, so Cloudflare could hand an installed
+         * app a four-hour-old worker; version.json carried no header at all.
+         */
+        async headers() {
+          const fresh = [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }];
+          return [
+            { source: '/sw.js', headers: fresh },
+            { source: '/version.json', headers: fresh },
+            { source: '/offline.html', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+          ];
+        },
+      }),
 };
 
 // Keep builds from replacing a running dev server's CSS and chunks.

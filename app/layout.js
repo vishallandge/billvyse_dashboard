@@ -98,6 +98,9 @@ import { THEME_IDS, DEFAULT_THEME } from '../lib/themes';
 import { SCENE_IDS, DEFAULT_SCENE } from '../lib/scenes';
 
 export const metadata = {
+  // Resolves the relative canonical/OG urls the login and register pages declare.
+  metadataBase: new URL('https://app.billvyse.com'),
+  applicationName: 'BillVyse',
   title: 'BillVyse – Dashboard',
   description: 'Platform admin and business dashboard for BillVyse.',
   manifest: '/manifest.json',
@@ -134,7 +137,31 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" data-accent={DEFAULT_THEME} className={`${inter.variable} ${devanagari.variable} ${brand.variable}`} suppressHydrationWarning>
-      <head><StartupStyles /></head>
+      <head>
+        <StartupStyles />
+        {process.env.NEXT_PUBLIC_BUILD_TARGET !== 'mobile' && (
+          <script
+            // An old copy of a page (a restored app window, a tab left open across a deploy)
+            // names the previous build's script files, which the deploy deleted. They 404,
+            // React never starts, and the screen stays blank or frozen — AppUpdater cannot
+            // help, because it is one of the scripts that failed. This runs before them and
+            // reloads once onto the current page; a 2-minute guard stops a loop.
+            dangerouslySetInnerHTML={{
+              __html:
+                "(function(){function go(){" +
+                "try{var k='billvyse_asset_reload',l=+sessionStorage.getItem(k)||0;" +
+                "if(Date.now()-l<120000)return;sessionStorage.setItem(k,Date.now())}catch(x){}" +
+                "location.reload()}" +
+                "addEventListener('error',function(e){var t=e.target,u=t&&(t.src||t.href)||'';" +
+                "if(u.indexOf('/_next/static/')>-1)go()},true);" +
+                // Next places its own script tags above this one, so a 404 can land before
+                // the listener exists; the resource timings still record it.
+                "addEventListener('load',function(){try{performance.getEntriesByType('resource').some(function(r){" +
+                "return r.name.indexOf('/_next/static/')>-1&&r.responseStatus>=400})&&go()}catch(x){}})})();",
+            }}
+          />
+        )}
+      </head>
       <body>
         <script
           // Set both theme attributes before hydration so there's no flash of the wrong

@@ -117,6 +117,10 @@ export default function AppUpdater() {
     const offHold = onAppUpdateHoldChange(() => setTimeout(tryReload, 0));
     const checkTimer = setInterval(check, CHECK_EVERY_MS);
     const retryTimer = setInterval(tryReload, RETRY_EVERY_MS);
+    // Ask once straight away too. An installed app window restores its last page on launch,
+    // sometimes from the browser's own copy, and is already focused by the time this runs —
+    // waiting for the next focus or the five-minute tick left it on old code all morning.
+    check();
 
     return () => {
       inputEvents.forEach((e) => window.removeEventListener(e, onInput, { capture: true }));
