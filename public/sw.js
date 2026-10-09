@@ -63,11 +63,24 @@ self.addEventListener('push', (event) => {
 
   const title = data.title || 'BillVyse';
 
+  // Buttons the server asked for (the evening close carries two). The browser only keeps
+  // `action` and `title`, so each button's destination rides along in `data`.
+  const actions = Array.isArray(data.actions)
+    ? data.actions.filter((a) => a && a.action && a.title).slice(0, 2)
+    : [];
+  const actionUrls = {};
+  for (const a of actions) if (a.url) actionUrls[a.action] = a.url;
+
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || '',
       icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      // Android draws the badge from its alpha channel alone — the brand's own badge asset,
+      // made for exactly that small monochrome slot.
+      badge: '/brand-badge.png',
+      // The day as a picture, where the platform shows one (Android, desktop Chrome).
+      ...(typeof data.image === 'string' && data.image ? { image: data.image } : {}),
+      ...(actions.length ? { actions: actions.map(({ action, title: label }) => ({ action, title: label })) } : {}),
       // Same tag replaces the previous notification instead of stacking, so the morning
       // summary never piles up. `renotify` makes the replacement still buzz — otherwise a
       // tagged update arrives completely silently and is never seen.
@@ -77,14 +90,16 @@ self.addEventListener('push', (event) => {
       // summaries auto-dismiss like any other notification.
       requireInteraction: data.urgency === 'high',
       timestamp: Date.now(),
-      data: { url: data.url || '/seller' },
+      data: { url: data.url || '/seller', actionUrls },
     })
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = event.notification.data?.url || '/seller';
+  const stored = event.notification.data || {};
+  // A button press goes where that button said; a tap on the body goes to the main url.
+  const target = (event.action && stored.actionUrls?.[event.action]) || stored.url || '/seller';
 
   // Focus the dashboard if it is already open somewhere rather than opening a second
   // window — a counter machine ending the day with nine dashboard tabs is its own bug.

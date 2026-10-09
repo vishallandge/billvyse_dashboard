@@ -19,6 +19,7 @@ import {
 import RowMenu from '../../components/RowMenu';
 import { recordHref } from '../../../lib/routeId';
 import { customerOptionLabel } from '../../../lib/customerLabel';
+import { compressPhoto } from '../../../lib/imageCompress';
 
 // Mirrors the enum in backend/models/Job.js.
 const STATUSES = ['received', 'in_progress', 'ready', 'delivered', 'cancelled'];
@@ -40,15 +41,6 @@ const NEXT_STATUS = {
 };
 
 const PAYMENT_MODES = ['cash', 'upi', 'card', 'khata'];
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function emptyForm() {
   return {
@@ -160,8 +152,13 @@ export default function JobsPage() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setForm((f) => ({ ...f, items: f.items.map((row, i) => (i === index ? { ...row, photoUrl: dataUrl } : row)) }));
+    // Shrunk first; the server drops an intake photo it cannot accept. See lib/imageCompress.js.
+    try {
+      const dataUrl = await compressPhoto(file);
+      setForm((f) => ({ ...f, items: f.items.map((row, i) => (i === index ? { ...row, photoUrl: dataUrl } : row)) }));
+    } catch (err) {
+      setError(t(err?.message === 'TOO_BIG' ? 'common.photoTooBig' : 'common.photoUnreadable'));
+    }
   }
   function removeItem(index) {
     setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== index) }));

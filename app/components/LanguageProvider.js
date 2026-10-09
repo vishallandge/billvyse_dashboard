@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { translate, loadLanguage, isLanguageLoaded, LANGUAGE_CODES, RTL_LANGS } from '../../lib/i18n';
+import { syncPushSubscription } from '../../lib/push';
 
 const LanguageContext = createContext(null);
 // Exported so the signup page can tell "no explicit choice yet" apart from "chose English"
@@ -62,6 +63,9 @@ export function LanguageProvider({ children }) {
     setLangState(next);
     localStorage.setItem(STORAGE_KEY, next);
     applyDirection(next);
+    // Tell the server this device now reads another language, so tonight's notification
+    // arrives in it. Silent and best-effort; the next page load re-syncs anyway.
+    syncPushSubscription();
   }, []);
 
   const t = useCallback((path, vars) => {

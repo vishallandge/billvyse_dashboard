@@ -22,7 +22,8 @@ import RowMenu from '../../components/RowMenu';
 import ThermalReceipt from '../../components/ThermalReceipt';
 import KotTicket from '../../components/KotTicket';
 import ModifierPicker from '../../components/ModifierPicker';
-import { enqueueBill, getQueue, removeFromQueue, updateQueueEntry, queueCount, newClientBillId } from '../../../lib/offlineQueue';
+import { enqueueBill, queueFor, removeFromQueue, updateQueueEntry, queueCount, newClientBillId, offlineBillingCheck, isPlanRefusal, rememberOfflineAllowed, lastKnownOfflineAllowed, MAX_OFFLINE_HOURS, MAX_OFFLINE_BILLS } from '../../../lib/offlineQueue';
+import { freshFetch } from '../../../lib/freshFetch';
 import { startBarcodeScanner } from '../../../lib/barcodeScanner';
 import { parseScan, scanExtras } from '../../../lib/scanCode';
 import { counterFeedback, isCounterSoundOn, setCounterSoundOn } from '../../../lib/counterFeedback';
@@ -336,6 +337,8 @@ export default function SellerBillingPage() {
   const confirm = useConfirm();
   const router = useRouter();
   const user = useDashboardUser();
+  // Which shop this device's offline bills belong to (see lib/offlineQueue.js enqueueBill).
+  const queueShop = String((user?.role === 'staff' ? user?.shop : user?.id || user?._id) || '');
   /**
    * Quotations are a trade's screen, and the button that makes one is the same screen one
    * level down — so it follows the same answer rather than a second rule of its own. A kirana
@@ -554,6 +557,25 @@ export default function SellerBillingPage() {
   const [returnBillId, setReturnBillId] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
   const [offlineCount, setOfflineCount] = useState(0);
+  // Offline billing is the super admin's switch (Admin → Modules, OFF by default). The last
+  // answer is kept on the device so the Play app knows it with no network; unknown = OFF.
+  const [offlineAllowed, setOfflineAllowed] = useState(false);
+  useEffect(() => {
+    if (!queueShop) return undefined;
+    setOfflineAllowed(lastKnownOfflineAllowed(queueShop));
+    let active = true;
+    freshFetch('/api/seller/modules', { ttl: 60000 })
+      .then((data) => {
+        if (!active) return;
+        const on = data?.modules?.offlineBilling === true;
+        setOfflineAllowed(on);
+        rememberOfflineAllowed(queueShop, on);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [queueShop]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmFilter, setConfirmFilter] = useState('');
   const [onlyShortages, setOnlyShortages] = useState(false);
@@ -819,22 +841,28 @@ export default function SellerBillingPage() {
   }
 
   async function syncOfflineQueue() {
-    if (syncingRef.current) return;
+    if (!queueShop || syncingRef.current) return;
     syncingRef.current = true;
     try {
-      const queue = getQueue();
+      const queue = queueFor(queueShop);
       let syncedAny = false;
       for (const entry of queue) {
         try {
-          await apiFetch('/api/seller/bills', { method: 'POST', body: JSON.stringify(entry.payload) });
+          // `billedAt` is when the sale actually happened. Without it a bill rung at 11:50 pm
+          // on the 30th and synced next morning landed on the 1st — wrong day's galla, wrong
+          // month's GST. The server decides whether to honour it (see resolveBilledAt).
+          await apiFetch('/api/seller/bills', {
+            method: 'POST',
+            body: JSON.stringify({ ...entry.payload, billedAt: entry.queuedAt }),
+          });
           removeFromQueue(entry.localId);
           syncedAny = true;
         } catch (err) {
           if (err instanceof TypeError) break; // still offline — stop and retry later
-          updateQueueEntry(entry.localId, { error: err.message, errorCode: err.code });
+          updateQueueEntry(entry.localId, { error: err.message, errorCode: err.code, errorStatus: err.status });
         }
       }
-      setOfflineCount(queueCount());
+      setOfflineCount(queueCount(queueShop));
       if (syncedAny) {
         refreshBills();
         apiFetch('/api/seller/products').then((d) => setProducts(d.products)).catch(() => {});
@@ -927,7 +955,10 @@ export default function SellerBillingPage() {
 
   useEffect(() => {
     setIsOnline(navigator.onLine);
-    setOfflineCount(queueCount());
+    // Nothing is synced until the signed-in shop is known: with no shop, the queue filter
+    // would match every shop's waiting bills on this device and post them all here.
+    if (!queueShop) return undefined;
+    setOfflineCount(queueCount(queueShop));
 
     function handleOnline() {
       setIsOnline(true);
@@ -943,8 +974,9 @@ export default function SellerBillingPage() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+    // Re-armed when the shop changes, so the listeners never sync with a stale shop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [queueShop]);
 
   useEffect(() => {
     if (user?.counterName && !localStorage.getItem(COUNTER_KEY)) setCounter(user.counterName);
@@ -2981,8 +3013,33 @@ export default function SellerBillingPage() {
   // reach the server) — shows an unconfirmed "pending sync" receipt and optimistically
   // decrements local stock so the seller can keep billing without waiting.
   function queueOfflineBill(payload) {
-    enqueueBill(payload);
-    setOfflineCount(queueCount());
+    // Switched off by the super admin (the default): no bill is made without the internet.
+    // Nothing is lost — the cart stays exactly as it was, ready to bill once the net is back.
+    if (!offlineAllowed) {
+      setError(t('seller.offlineOff'));
+      setConfirmOpen(true);
+      return false;
+    }
+    // Offline billing is for a dropped network, not for running the shop off the books:
+    // it closes once this device has not reached the server for 72 hours, or once 300
+    // bills are already waiting. Returns false (and says why) when it refuses.
+    const allowed = offlineBillingCheck(Date.now(), queueShop);
+    if (!allowed.ok) {
+      const key = { full: 'seller.offlineQueueFull', plan: 'seller.offlinePlanBlocked', unsynced: 'seller.offlineUnsynced' }[allowed.reason] || 'seller.offlineTooLong';
+      setError(t(key, { hours: MAX_OFFLINE_HOURS, count: MAX_OFFLINE_BILLS }));
+      setConfirmOpen(true);
+      return false;
+    }
+    try {
+      enqueueBill(payload, queueShop);
+    } catch {
+      // The device's storage is full or blocked: the bill was NOT kept. Said plainly, and no
+      // pending receipt is printed for a sale that exists nowhere.
+      setError(t('seller.offlineSaveFailed'));
+      setConfirmOpen(true);
+      return false;
+    }
+    setOfflineCount(queueCount(queueShop));
 
     const items = payload.items
       .map((it) => {
@@ -3046,6 +3103,7 @@ export default function SellerBillingPage() {
     );
     rememberQuickPicks(cart);
     clearCartAfterBill();
+    return true;
   }
 
   /**
@@ -3447,8 +3505,7 @@ export default function SellerBillingPage() {
         setConfirmOpen(true);
         return;
       }
-      queueOfflineBill(payload);
-      setConfirmOpen(false);
+      if (queueOfflineBill(payload)) setConfirmOpen(false);
       return;
     }
 
@@ -3510,8 +3567,7 @@ export default function SellerBillingPage() {
     } catch (err) {
       if (err instanceof TypeError) {
         setIsOnline(false);
-        queueOfflineBill(payload);
-        setConfirmOpen(false);
+        if (queueOfflineBill(payload)) setConfirmOpen(false);
       } else if (err.code === 'BELOW_COST') {
         // Not a dead end and not a silent override: the counter is shown exactly which
         // lines lose money and by how much, and decides.
@@ -4004,14 +4060,14 @@ export default function SellerBillingPage() {
           anybody: a failed share, a camera that would not open, a server message. */}
       {error && !errorFix && <ProblemNote text={error} />}
       {liveNotice && <div className="info-banner">{liveNotice}</div>}
-      {!isOnline && <div className="error-banner">{t('seller.offlineBanner')}</div>}
+      {!isOnline && <div className="error-banner">{t(offlineAllowed ? 'seller.offlineBanner' : 'seller.offlineBannerOff')}</div>}
       {isOnline && offlineCount > 0 && (
         <div className="info-banner">{t('seller.syncingBanner', { count: offlineCount })}</div>
       )}
-      {offlineCount > 0 && getQueue().some((entry) => entry.error) && (
+      {offlineCount > 0 && queueFor(queueShop).some((entry) => entry.error) && (
         <div className="panel">
           <h2>{t('seller.offlineQueueErrorsTitle')}</h2>
-          {getQueue()
+          {queueFor(queueShop)
             .filter((entry) => entry.error)
             .map((entry) => (
               <div key={entry.localId} className="error-banner" style={{ marginBottom: '0.5rem' }}>
@@ -4025,15 +4081,27 @@ export default function SellerBillingPage() {
                       {t('seller.rebillAsWalkIn')}
                     </button>
                   )}
-                  <button
-                    className="btn btn-danger btn-small"
-                    onClick={() => {
-                      removeFromQueue(entry.localId);
-                      setOfflineCount(queueCount());
-                    }}
-                  >
-                    {t('common.delete')}
-                  </button>
+                  {/* A waiting bill is a sale whose money was already taken. Never one tap
+                      away from gone, and never at all while it is only waiting on the plan —
+                      that one goes through as soon as the plan allows it. */}
+                  {!isPlanRefusal(entry) && (
+                    <button
+                      className="btn btn-danger btn-small"
+                      onClick={async () => {
+                        const ok = await confirm({
+                          tone: 'danger',
+                          title: t('seller.offlineDeleteTitle'),
+                          body: t('seller.offlineDeleteBody'),
+                          confirmLabel: t('common.delete'),
+                        });
+                        if (!ok) return;
+                        removeFromQueue(entry.localId);
+                        setOfflineCount(queueCount(queueShop));
+                      }}
+                    >
+                      {t('common.delete')}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -6271,7 +6339,9 @@ export default function SellerBillingPage() {
                           {/* Cancelling is the owner's call, so a staff cashier never sees
                               the button — the route refuses them anyway. Red, because it is
                               the one action here that unmakes a sale. */}
-                          {user?.role !== 'staff' && bill.status === 'completed' && !bill.returns?.length && (
+                          {/* Hidden, too, on an earlier month's GST invoice: that month's return
+                              is filed, so the server only allows a Return (credit note) now. */}
+                          {user?.role !== 'staff' && bill.status === 'completed' && !bill.returns?.length && !bill.cancelLocked && (
                             <button
                               type="button"
                               className="icon-btn danger"

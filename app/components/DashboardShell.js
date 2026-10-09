@@ -36,6 +36,8 @@ import { requestUpgrade } from '../../lib/upgradeSignal';
 import { businessType } from '../../lib/businessTypes';
 import { formatDate, formatQty, formatRupees } from '../../lib/format';
 import { recordHref } from '../../lib/routeId';
+import { useConfirm } from './ConfirmDialog';
+import { queueCount } from '../../lib/offlineQueue';
 
 const SidebarTour = dynamic(() => import('./SidebarTour'));
 const WelcomeOverlay = dynamic(() => import('./WelcomeOverlay'));
@@ -363,6 +365,7 @@ export default function DashboardShell({ role, navItems, children }) {
   const { t, lang, setLang } = useLanguage();
   const { theme, toggleTheme, adoptServerAccent, adoptServerScene } = useTheme();
   const toast = useToast();
+  const confirm = useConfirm();
   const [user, setUser] = useState(null);
   const [checked, setChecked] = useState(false);
   const [stores, setStores] = useState([]);
@@ -1028,6 +1031,20 @@ export default function DashboardShell({ role, navItems, children }) {
   }, [role, router]);
 
   async function handleLogout() {
+    // Bills rung offline on this device and not yet on the server go nowhere until this
+    // shop signs in here again. They are kept (logging out never deletes them), but the
+    // person leaving must know their sales are still sitting on this device.
+    const waitingShop = user ? String(user.role === 'staff' ? user.shop : user.id || user._id) : null;
+    const waiting = waitingShop ? queueCount(waitingShop) : 0;
+    if (waiting > 0) {
+      const ok = await confirm({
+        tone: 'warning',
+        title: t('seller.logoutUnsyncedTitle'),
+        body: t('seller.logoutUnsyncedBody', { count: waiting }),
+        confirmLabel: t('seller.logoutAnyway'),
+      });
+      if (!ok) return;
+    }
     // A round trip now, not a localStorage wipe: the session is an httpOnly cookie, so only
     // the server can actually end it. Clearing local state first means a failed or slow
     // logout still leaves the tab in a signed-out state rather than half-signed-in.

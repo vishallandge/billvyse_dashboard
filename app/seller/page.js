@@ -15,6 +15,8 @@ import WhatsappSheet from '../components/WhatsappSheet';
 import { RupeeIcon, ReceiptIcon, LedgerIcon, AlertIcon, ClockIcon, PackageIcon, StarIcon, CalendarIcon, CopyIcon, XIcon, ChevronRightIcon, TrendUpIcon, TrendDownIcon, WalletIcon, BarChartIcon } from '../components/Icons';
 import { SkeletonStats, SkeletonCards } from '../components/Skeleton';
 import GreetingHero from '../components/GreetingHero';
+import VoiceBriefing from '../components/VoiceBriefing';
+import WelcomeSplash from '../components/WelcomeSplash';
 import MunafaCard from '../components/MunafaCard';
 import QuickActions from '../components/QuickActions';
 import GrowthSlot from '../components/CampaignCard';
@@ -194,6 +196,12 @@ export default function SellerOverviewPage() {
     // screens that share them.
     <div className="ov-page">
       <GreetingHero shopName={user?.shopName} />
+
+      {/* The shop's logo for three seconds, once a day — Overview only, never over billing. */}
+      {user && <WelcomeSplash user={user} />}
+
+      {/* "आज का हाल" — the day read out loud. Owner only: it speaks the profit. */}
+      {user?.role === 'seller' && <VoiceBriefing />}
 
       {showWelcome && user?.shopSlug && (
         <div className="welcome-banner">

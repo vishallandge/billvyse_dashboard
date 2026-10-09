@@ -60388,3 +60388,291 @@ body.bv-print-compact .kot-ticket .kt-head { margin-bottom: 1mm; }
     animation: none;
   }
 }
+
+/* ── "आज का हाल" — the spoken day summary on the home screen ─────────────────────────
+   A calm card, not a banner: the brand tint says "this is BillVyse talking to you", the
+   paragraph being read lights up so the ear and the eye stay on the same sentence. Every
+   colour is a theme token, so it reads the same in light, dark and every accent. */
+.briefing {
+  border: 1px solid rgba(var(--brand-rgb), 0.35);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(var(--brand-rgb), 0.12), rgba(var(--success-rgb), 0.05));
+  padding: 1rem 1.15rem 0.9rem;
+  margin-bottom: 1.2rem;
+  display: grid;
+  gap: 0.7rem;
+}
+.briefing-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.briefing-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  flex: 1;
+  min-width: 0;
+}
+.briefing-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(var(--brand-rgb), 0.18);
+  color: var(--brand-text);
+  flex: none;
+}
+.briefing-text {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 70ch;
+}
+.briefing-text p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text-muted);
+  border-left: 3px solid transparent;
+  padding-left: 0.6rem;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.briefing-text p:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+.briefing-text p.is-speaking {
+  color: var(--text);
+  border-left-color: var(--success);
+}
+.briefing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.briefing-actions .btn svg {
+  margin-right: 0.35rem;
+  vertical-align: -3px;
+}
+.briefing-off {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+.briefing-note {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.briefing-reopen {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.briefing-reopen:hover {
+  border-color: rgba(var(--brand-rgb), 0.5);
+}
+.briefing-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0 0.25rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.briefing-setting > span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.briefing-setting small {
+  color: var(--text-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .briefing-text p {
+    transition: none;
+  }
+}
+.briefing-more {
+  justify-self: start;
+  font-size: 0.85rem;
+  padding-left: 0.6rem;
+}
+
+/* ── Welcome splash — the shop's own logo for three seconds, once a day (experiment) ───────
+   A MOMENT, not ambient: it plays once and is gone. No sheen/sweep/glint (permanently
+   rejected); the rings draw once and stop. Every duration scales with --motion-scale, and
+   `.ws--reduced` is a plain fade. Colours are theme tokens, so light and dark both work.
+   See app/components/WelcomeSplash.js. */
+.ws {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: env(safe-area-inset-top, 0px) 16px env(safe-area-inset-bottom, 0px);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(var(--brand-rgb), 0.26), transparent 58%),
+    radial-gradient(circle at 50% 120%, rgba(var(--success-rgb), 0.16), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  animation: wsIn calc(380ms * var(--motion-scale)) var(--motion-ease) both;
+}
+.ws--out {
+  animation: wsOut calc(420ms * var(--motion-scale)) var(--motion-ease) both;
+}
+.ws-stage {
+  display: grid;
+  justify-items: center;
+  gap: 0.55rem;
+  text-align: center;
+  max-width: 34rem;
+}
+.ws-mark {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.6rem;
+}
+.ws-rings {
+  position: absolute;
+  inset: -10px;
+  width: calc(100% + 20px);
+  height: calc(100% + 20px);
+  transform: rotate(-90deg);
+}
+.ws-ring {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.ws-ring--outer {
+  stroke: var(--brand);
+  stroke-dasharray: 654;
+  stroke-dashoffset: 654;
+  animation: wsDraw calc(1100ms * var(--motion-scale)) var(--motion-ease) calc(250ms * var(--motion-scale)) forwards;
+}
+.ws-ring--inner {
+  stroke: var(--success);
+  stroke-width: 2;
+  opacity: 0.85;
+  stroke-dasharray: 579;
+  stroke-dashoffset: 579;
+  animation: wsDraw calc(1100ms * var(--motion-scale)) var(--motion-ease) calc(450ms * var(--motion-scale)) forwards;
+}
+.ws-plate {
+  width: 156px;
+  height: 156px;
+  border-radius: 50%;
+  /* White on purpose, in both themes: a shop's logo is drawn for paper, so it reads on white. */
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28), 0 0 0 6px rgba(var(--brand-rgb), 0.12);
+  animation: wsPop calc(700ms * var(--motion-scale)) cubic-bezier(0.2, 0.9, 0.3, 1.2) calc(120ms * var(--motion-scale)) both;
+}
+.ws-plate img {
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+}
+.ws-name {
+  margin: 0;
+  font-family: var(--font-brand-ui);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  animation: wsRise calc(560ms * var(--motion-scale)) var(--motion-ease) calc(700ms * var(--motion-scale)) both;
+}
+.ws-greet {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text);
+  animation: wsRise calc(560ms * var(--motion-scale)) var(--motion-ease) calc(1000ms * var(--motion-scale)) both;
+}
+.ws-ready {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--text-muted);
+  animation: wsRise calc(560ms * var(--motion-scale)) var(--motion-ease) calc(1250ms * var(--motion-scale)) both;
+}
+.ws-skip {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  min-height: 32px;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.ws-skip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.ws-brand {
+  position: absolute;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-brand-ui);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+/* Reduced motion: no growing, no drawing — the whole thing simply fades in and out. */
+.ws--reduced .ws-plate,
+.ws--reduced .ws-name,
+.ws--reduced .ws-greet,
+.ws--reduced .ws-ready {
+  animation: none;
+}
+.ws--reduced .ws-ring {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+@keyframes wsIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes wsOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.02); }
+}
+@keyframes wsPop {
+  from { opacity: 0; transform: scale(0.82); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes wsRise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes wsDraw {
+  to { stroke-dashoffset: 0; }
+}
+@media (max-width: 420px) {
+  .ws-mark { width: 160px; height: 160px; }
+  .ws-plate { width: 124px; height: 124px; }
+  .ws-name { font-size: var(--fs-2xl); }
+}

@@ -51,6 +51,7 @@ import ScreenPicker from '../../components/ScreenPicker';
 import TextSizePicker from '../../components/TextSizePicker';
 import ThemeModePicker from '../../components/ThemeModePicker';
 import PushSettings from '../../components/PushSettings';
+import VoiceBriefingSetting from '../../components/VoiceBriefingSetting';
 import PrinterSettings from '../../components/PrinterSettings';
 import SaveBar, { ChangeReview } from '../../components/SaveBar';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -1223,6 +1224,7 @@ export default function SellerSettingsPage() {
             <h2>{t('seller.pushTitle')}</h2>
         </div>
         <PushSettings />
+        <VoiceBriefingSetting />
       </div>
       )}
 

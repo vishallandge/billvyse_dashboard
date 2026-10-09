@@ -71,6 +71,7 @@ import Illustration from '../../components/Illustration';
 import ImportProgress, { importAddedNothing } from '../../components/ImportProgress';
 import { fetchProductImportPreview } from '../../../lib/productImportPreview';
 import { recordHref } from '../../../lib/routeId';
+import { compressPhoto } from '../../../lib/imageCompress';
 
 const ADJUSTMENT_TYPES = ['damage', 'theft', 'self_use', 'correction'];
 // Mirrors MAX_IMPORT_BYTES in backend/utils/uploadGuard.js. If one moves, move both —
@@ -181,15 +182,6 @@ function blankForm(type) {
     unit: config.defaultUnit,
     gstRate: String(config.defaultGstRate),
   };
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 /**
@@ -997,8 +989,14 @@ function SellerProductsPageInner() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setForm((f) => ({ ...f, photoUrl: dataUrl }));
+    // Shrunk to a ~800px JPEG first: a camera photo as picked is far over the server's
+    // limit and was refused every time. See lib/imageCompress.js.
+    try {
+      const dataUrl = await compressPhoto(file);
+      setForm((f) => ({ ...f, photoUrl: dataUrl }));
+    } catch (err) {
+      setError(t(err?.message === 'TOO_BIG' ? 'common.photoTooBig' : 'common.photoUnreadable'));
+    }
   }
 
   // Only fills in fields the seller hasn't already typed something into — price/stock

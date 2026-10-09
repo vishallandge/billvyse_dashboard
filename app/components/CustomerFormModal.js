@@ -8,6 +8,7 @@ import { useLanguage } from './LanguageProvider';
 import Modal from './Modal';
 import PhoneField from './PhoneField';
 import AddressField from './AddressField';
+import { compressPhoto } from '../../lib/imageCompress';
 import {
   addressErrorText,
   cleanAddressText,
@@ -28,15 +29,6 @@ import {
  * (opening balance on the way in, "khata band" on the way out) and letting them drift apart
  * is how a field ends up saveable on one screen and not the other.
  */
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 const EMPTY = {
   name: '',
@@ -116,8 +108,14 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
   async function handlePhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setForm((f) => ({ ...f, photoUrl: dataUrl }));
+    event.target.value = '';
+    // Shrunk first, like a product photo — see lib/imageCompress.js.
+    try {
+      const dataUrl = await compressPhoto(file);
+      setForm((f) => ({ ...f, photoUrl: dataUrl }));
+    } catch (err) {
+      setError(t(err?.message === 'TOO_BIG' ? 'common.photoTooBig' : 'common.photoUnreadable'));
+    }
   }
 
   // Caught here as well as on the server: a ten-digit rule is worth saying before the
