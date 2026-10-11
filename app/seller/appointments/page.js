@@ -73,7 +73,7 @@ function forwardStatus(appointment) {
   return (NEXT_STATUS[appointment.status] || []).find((next) => !['cancelled', 'no_show', 'booked'].includes(next)) || '';
 }
 
-const PAYMENT_MODES = ['cash', 'upi', 'card', 'khata'];
+const PAYMENT_MODES = ['upi', 'cash', 'card', 'khata'];
 
 /**
  * How long a service takes, in the unit the shopkeeper actually thinks in.
@@ -121,7 +121,7 @@ function minutesOfDay(date) {
   const d = new Date(date);
   return d.getHours() * 60 + d.getMinutes();
 }
-const COLLECT_MODES = ['cash', 'upi', 'card', 'bank'];
+const COLLECT_MODES = ['upi', 'cash', 'card', 'bank'];
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 
 function timeInput(date) {
@@ -147,7 +147,7 @@ function emptyForm() {
     source: 'counter',
     services: [],
     advanceAmount: '',
-    advanceMode: 'cash',
+    advanceMode: 'upi',
     repeatEnabled: false,
     repeatFrequency: 'weekly',
     repeatCount: '4',
@@ -195,10 +195,10 @@ export default function AppointmentsPage() {
   const [phoneMatch, setPhoneMatch] = useState(null);
 
   const [billing, setBilling] = useState(null);
-  const [billForm, setBillForm] = useState({ mode: 'cash', discountPercent: '', splitEnabled: false, splitMode: 'upi', splitAmount: '' });
+  const [billForm, setBillForm] = useState({ mode: 'upi', discountPercent: '', splitEnabled: false, splitMode: 'cash', splitAmount: '' });
 
   const [advanceFor, setAdvanceFor] = useState(null);
-  const [advanceForm, setAdvanceForm] = useState({ amount: '', mode: 'cash', note: '' });
+  const [advanceForm, setAdvanceForm] = useState({ amount: '', mode: 'upi', note: '' });
 
   const [cancelFor, setCancelFor] = useState(null);
   const [cancelForm, setCancelForm] = useState({ status: 'cancelled', reason: '', advanceAction: '' });
@@ -777,7 +777,7 @@ export default function AppointmentsPage() {
   function openAdvance(appointment) {
     setAdvanceForm({
       amount: appointment.advanceAmount > 0 ? String(appointment.advanceAmount) : '',
-      mode: appointment.advanceMode || 'cash',
+      mode: appointment.advanceMode || 'upi',
       note: appointment.advanceNote || '',
     });
     setAdvanceFor(appointment);
@@ -842,7 +842,7 @@ export default function AppointmentsPage() {
   }
 
   function openBilling(appointment) {
-    setBillForm({ mode: 'cash', discountPercent: '', splitEnabled: false, splitMode: 'upi', splitAmount: '' });
+    setBillForm({ mode: 'upi', discountPercent: '', splitEnabled: false, splitMode: 'cash', splitAmount: '' });
     setBilling(appointment);
   }
 

@@ -98,7 +98,7 @@ import { formatRupees } from '../../../lib/format';
 // history possible at all.
 
 const TAKEAWAY_TYPES = ['parcel', 'delivery'];
-const SPLIT_MODES = ['cash', 'upi', 'card'];
+const SPLIT_MODES = ['upi', 'cash', 'card'];
 const NO_CHARGES = [];
 // Per-device count of how often each dish is added, for "Most added" and the empty search.
 const MENU_TALLY_KEY = 'bv:menuTally';
@@ -320,11 +320,11 @@ export default function TablesPage() {
   const [mergePicking, setMergePicking] = useState(false);
   const [mergeTarget, setMergeTarget] = useState('');
 
-  const [settleMode, setSettleMode] = useState('cash');
+  const [settleMode, setSettleMode] = useState('upi');
   const [settleCustomerId, setSettleCustomerId] = useState('');
   // "Kitna diya" on a khata settle; what is left goes on the khata. See KhataPaidNow.js.
   const [paidNow, setPaidNow] = useState('');
-  const [paidNowMode, setPaidNowMode] = useState('cash');
+  const [paidNowMode, setPaidNowMode] = useState('upi');
   const [guestPaid, setGuestPaid] = useState({}); // guestIndex -> { amount, mode }
   const [split, setSplit] = useState({ cash: '', upi: '', card: '' });
   const [billDiscountPercent, setBillDiscountPercent] = useState('');
@@ -501,9 +501,9 @@ export default function TablesPage() {
     setSeatPicks([]);
     // How the last table paid, its discount and its customer are that table's — carried
     // over, T2 would settle on T1's khata customer or with T1's 10% off.
-    setSettleMode('cash');
+    setSettleMode('upi');
     setPaidNow('');
-    setPaidNowMode('cash');
+    setPaidNowMode('upi');
     setSplit({ cash: '', upi: '', card: '' });
     setBillDiscountPercent('');
     setBillDiscountAmount('');
@@ -1547,10 +1547,10 @@ export default function TablesPage() {
       setSplitSettledReceipts([]);
       showSettled({ bill: billData.bill, customer: customerById(settleCustomerId) });
       setActiveId(null);
-      setSettleMode('cash');
+      setSettleMode('upi');
       setSettleCustomerId('');
       setPaidNow('');
-      setPaidNowMode('cash');
+      setPaidNowMode('upi');
       setSplit({ cash: '', upi: '', card: '' });
       setBillDiscountPercent('');
       setBillDiscountAmount('');
@@ -1570,7 +1570,7 @@ export default function TablesPage() {
     if (!active) return;
     setAllocation({});
     setGroupNames({});
-    setGuestModes({ 0: 'cash', 1: 'cash' });
+    setGuestModes({ 0: 'upi', 1: 'upi' });
     setGuestCustomers({});
     setGuestPaid({});
     setSplitGuestCount(2);
@@ -1599,7 +1599,7 @@ export default function TablesPage() {
     });
     setGuestModes((modes) => {
       const copy = { ...modes };
-      for (let i = 0; i < n; i++) if (!copy[i]) copy[i] = 'cash';
+      for (let i = 0; i < n; i++) if (!copy[i]) copy[i] = 'upi';
       return copy;
     });
   }
@@ -1633,7 +1633,7 @@ export default function TablesPage() {
     const names = {};
     seats.forEach((seat, i) => { names[i] = t('tables.seat.chair', { seat }); });
     setGroupNames(names);
-    setGuestModes(Object.fromEntries(Array.from({ length: count }, (_, i) => [i, 'cash'])));
+    setGuestModes(Object.fromEntries(Array.from({ length: count }, (_, i) => [i, 'upi'])));
   }
 
   function setItemRule(item, rule) {
@@ -1723,7 +1723,7 @@ export default function TablesPage() {
   }
 
   function groupNeedsCustomer(g) {
-    return (guestModes[g.index] || 'cash') === 'khata' && !guestCustomers[g.index];
+    return (guestModes[g.index] || 'upi') === 'khata' && !guestCustomers[g.index];
   }
 
   // A customer picked on a split bill who has since been closed or merged on another screen.
@@ -1735,7 +1735,7 @@ export default function TablesPage() {
   // A guest's khata bill, read through the same rule as the whole-table card, so the two
   // can never disagree about "kitna diya, kitna baaki". Null for a guest not on khata.
   function groupKhataMoney(g, { part = false } = {}) {
-    if ((guestModes[g.index] || 'cash') !== 'khata') return null;
+    if ((guestModes[g.index] || 'upi') !== 'khata') return null;
     return khataSplit({
       payable: part ? g.partPayable : g.payable,
       paidNow: guestPaid[g.index]?.amount ?? '',
@@ -1744,7 +1744,7 @@ export default function TablesPage() {
   }
 
   function createGroupBill(g, kind, { withTakeaway = g.takeaway > 0, extraFlat = g.extraFlat, part = false } = {}) {
-    const mode = guestModes[g.index] || 'cash';
+    const mode = guestModes[g.index] || 'upi';
     const khataMoney = groupKhataMoney(g, { part });
     const paid = khataMoney && khataMoney.paid > 0 ? khataMoney.paid : 0;
     return apiFetch('/api/seller/bills', {
@@ -1762,7 +1762,7 @@ export default function TablesPage() {
         counter: `${active.tableLabel || active.tableName} · ${groupLabel(g.index)}`,
         customerId: guestCustomers[g.index] || undefined,
         paidNow: paid > 0 ? paid : undefined,
-        paidNowMode: paid > 0 ? guestPaid[g.index]?.mode || 'cash' : undefined,
+        paidNowMode: paid > 0 ? guestPaid[g.index]?.mode || 'upi' : undefined,
         billDiscountPercent: Number(billDiscountPercent) || undefined,
       }),
     });
@@ -3001,11 +3001,11 @@ export default function TablesPage() {
                                     ))}
                                   </ul>
                                   <div className="segmented-mini" role="group">
-                                    {['cash', 'upi', 'card', 'khata'].map((mode) => (
+                                    {['upi', 'cash', 'card', 'khata'].map((mode) => (
                                       <button
                                         key={mode}
                                         type="button"
-                                        className={(guestModes[g.index] || 'cash') === mode ? 'active' : ''}
+                                        className={(guestModes[g.index] || 'upi') === mode ? 'active' : ''}
                                         onClick={() => setGuestModes((m) => ({ ...m, [g.index]: mode }))}
                                       >
                                         {mode === 'khata' ? t('nav.khata') : t(`seller.${mode}`)}
@@ -3024,7 +3024,7 @@ export default function TablesPage() {
                                       options={[
                                         {
                                           value: '',
-                                          label: (guestModes[g.index] || 'cash') === 'khata'
+                                          label: (guestModes[g.index] || 'upi') === 'khata'
                                             ? t('seller.selectCustomer')
                                             : t('tables.billCustomer'),
                                         },
@@ -3053,12 +3053,12 @@ export default function TablesPage() {
                                   {groupNeedsCustomer(g) && (
                                     <p className="field-hint" style={{ margin: 0 }}>{t('tables.khataCustomerHint')}</p>
                                   )}
-                                  {(guestModes[g.index] || 'cash') === 'khata' && guestCustomers[g.index] && (
+                                  {(guestModes[g.index] || 'upi') === 'khata' && guestCustomers[g.index] && (
                                     <KhataPaidNow
                                       id={`guest-paid-${g.index}`}
                                       payable={g.payable}
                                       value={guestPaid[g.index]?.amount ?? ''}
-                                      mode={guestPaid[g.index]?.mode || 'cash'}
+                                      mode={guestPaid[g.index]?.mode || 'upi'}
                                       onChange={(v) => setGuestPaid((p) => ({ ...p, [g.index]: { ...p[g.index], amount: v } }))}
                                       onModeChange={(m) => setGuestPaid((p) => ({ ...p, [g.index]: { ...p[g.index], mode: m } }))}
                                       customer={customerById(guestCustomers[g.index])}
@@ -3093,8 +3093,8 @@ export default function TablesPage() {
                         <label>{t('seller.paymentMode')}</label>
                         <div className="segmented" role="group">
                           {[
-                            { id: 'cash', label: t('seller.cash'), icon: RupeeIcon },
                             { id: 'upi', label: t('seller.upi'), icon: WalletIcon },
+                            { id: 'cash', label: t('seller.cash'), icon: RupeeIcon },
                             { id: 'card', label: t('seller.card'), icon: CreditCardIcon },
                             { id: 'khata', label: t('nav.khata'), icon: LedgerIcon },
                             { id: 'split', label: t('seller.splitPayment'), icon: SwapIcon },

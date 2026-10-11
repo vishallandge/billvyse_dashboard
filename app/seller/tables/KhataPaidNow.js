@@ -112,7 +112,7 @@ export default function KhataPaidNow({ id, payable, value, mode, onChange, onMod
           className="paid-now-mode"
           value={mode}
           onChange={onModeChange}
-          options={['cash', 'upi', 'card', 'bank'].map((m) => ({ value: m, label: t(`expenses.mode.${m}`) }))}
+          options={['upi', 'cash', 'card', 'bank'].map((m) => ({ value: m, label: t(`expenses.mode.${m}`) }))}
         />
       </div>
 

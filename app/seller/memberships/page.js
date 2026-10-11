@@ -21,7 +21,7 @@ import CustomerQuickAdd from '../../components/CustomerQuickAdd';
 import { recordHref } from '../../../lib/routeId';
 import { customerOptionLabel } from '../../../lib/customerLabel';
 
-const PAYMENT_MODES = ['cash', 'upi', 'card', 'khata'];
+const PAYMENT_MODES = ['upi', 'cash', 'card', 'khata'];
 
 function inNDays(n) {
   const d = new Date();
@@ -66,7 +66,7 @@ export default function MembershipsPage() {
   const [renewForm, setRenewForm] = useState({ endDate: '', amount: '' });
   // { membership, installmentIndex: null (whole plan) | number (one instalment) }
   const [billing, setBilling] = useState(null);
-  const [billMode, setBillMode] = useState('cash');
+  const [billMode, setBillMode] = useState('upi');
   /**
    * Adding the member here, on the form that needs one.
    *
@@ -331,7 +331,7 @@ export default function MembershipsPage() {
       const result = await apiFetch(url, { method: 'POST', body: JSON.stringify({ paymentMode: billMode }) });
       toast.success(t('memberships.billedToast', { number: result.bill.billNumber }));
       setBilling(null);
-      setBillMode('cash');
+      setBillMode('upi');
       load();
     } catch (err) {
       toast.error(err.message);
@@ -476,7 +476,7 @@ export default function MembershipsPage() {
                             <button
                               type="button"
                               className="link-btn"
-                              onClick={() => { setBilling({ membership: m, installmentIndex: inst.index }); setBillMode('cash'); }}
+                              onClick={() => { setBilling({ membership: m, installmentIndex: inst.index }); setBillMode('upi'); }}
                             >
                               {t('memberships.billIt')}
                             </button>
@@ -501,7 +501,7 @@ export default function MembershipsPage() {
                         type="button"
                         className="icon-btn primary"
                         data-tip={t('memberships.billIt')}
-                        onClick={() => { setBilling({ membership: m, installmentIndex: null }); setBillMode('cash'); }}
+                        onClick={() => { setBilling({ membership: m, installmentIndex: null }); setBillMode('upi'); }}
                       >
                         <RupeeIcon size={17} />
                       </button>

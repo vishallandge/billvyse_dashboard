@@ -40,7 +40,7 @@ const NEXT_STATUS = {
   cancelled: [],
 };
 
-const PAYMENT_MODES = ['cash', 'upi', 'card', 'khata'];
+const PAYMENT_MODES = ['upi', 'cash', 'card', 'khata'];
 
 function emptyForm() {
   return {
@@ -75,7 +75,7 @@ export default function JobsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [billing, setBilling] = useState(null);
-  const [billMode, setBillMode] = useState('cash');
+  const [billMode, setBillMode] = useState('upi');
   const [customerMeasurements, setCustomerMeasurements] = useState([]);
 
   const query = useMemo(() => {
@@ -244,7 +244,7 @@ export default function JobsPage() {
       });
       toast.success(t('jobs.billedToast', { number: result.bill.billNumber }));
       setBilling(null);
-      setBillMode('cash');
+      setBillMode('upi');
       load();
     } catch (err) {
       toast.error(err.message);
@@ -395,7 +395,7 @@ export default function JobsPage() {
                           type="button"
                           className="icon-btn primary"
                           data-tip={t('jobs.billIt')}
-                          onClick={() => { setBilling(job); setBillMode('cash'); }}
+                          onClick={() => { setBilling(job); setBillMode('upi'); }}
                         >
                           <RupeeIcon size={17} />
                         </button>

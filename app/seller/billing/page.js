@@ -361,13 +361,13 @@ export default function SellerBillingPage() {
   // A product with modifierGroups is added via a picker, not a bare tap — see
   // handleProductAdd below, which is what ProductTile's onAdd is actually wired to.
   const [modifierPickFor, setModifierPickFor] = useState(null); // { product, saleUnit, quantity }
-  const [paymentMode, setPaymentMode] = useState('cash');
+  const [paymentMode, setPaymentMode] = useState('upi');
   const [customerId, setCustomerId] = useState('');
   const [staffList, setStaffList] = useState([]);
   const [staffPaysCommission, setStaffPaysCommission] = useState(false);
   const [billStaffId, setBillStaffId] = useState('');
   const [paidNow, setPaidNow] = useState('');
-  const [paidNowMode, setPaidNowMode] = useState('cash');
+  const [paidNowMode, setPaidNowMode] = useState('upi');
   // "Exact" is a standing instruction, not a one-time paste — see the sync effect below.
   // Two separate latches because the cash drawer and a khata advance are two different
   // sentences ("poore paise liye" / "poora aaj hi de diya") and a shopkeeper can be mid-way
@@ -1281,7 +1281,7 @@ export default function SellerBillingPage() {
         // The segmented control is off screen until there is a cart, so cycling it there
         // would change a setting nobody can see — and then surprise the next customer.
         if (cart.length === 0) return;
-        const modes = ['cash', 'upi', 'card', 'khata', 'split'];
+        const modes = ['upi', 'cash', 'card', 'khata', 'split'];
         setPaymentMode((mode) => modes[(modes.indexOf(mode) + 1) % modes.length]);
         return;
       }
@@ -2739,7 +2739,11 @@ export default function SellerBillingPage() {
     setRedeemPoints('');
     setLoyaltyPreview(null);
     setPaidNow('');
-    setPaidNowMode('cash');
+    setPaidNowMode('upi');
+    // Every bill starts on UPI, the way most counters are paid now, not on whatever the
+    // last customer happened to pay with.
+    setPaymentMode('upi');
+    setUpiQrOpen(false);
     // The next customer must not inherit the last one's standing "Exact".
     setPaidNowExact(false);
     setCashExact(false);
@@ -2841,7 +2845,7 @@ export default function SellerBillingPage() {
     setRedeemPoints('');
     setLoyaltyPreview(null);
     setLoyaltyError('');
-    if (paymentMode === 'khata') setPaymentMode('cash');
+    if (paymentMode === 'khata') setPaymentMode('upi');
     setError('');
   }
 
@@ -3367,7 +3371,7 @@ export default function SellerBillingPage() {
   const billFixes = {
     customer: { label: t('seller.fixPickCustomer'), extra: 'customer', focus: '#customer' },
     prescription: { label: t('seller.fixPrescription'), extra: 'prescription', focus: '#prescriptionDoctor' },
-    split: { label: t('seller.fixSplit'), focus: '#split-cash' },
+    split: { label: t('seller.fixSplit'), focus: '#split-upi' },
     // These two stay in the review modal on purpose: the problem is a row of the bill, and
     // the modal is the one place that can filter the cart down to just those rows.
     shortages: {
@@ -4902,8 +4906,8 @@ export default function SellerBillingPage() {
                   <span className="pos-pay__label" id="paymentModeLabel">{t('seller.paymentMode')}</span>
                   <div className="segmented" role="group" aria-labelledby="paymentModeLabel">
                     {[
-                      { id: 'cash', label: t('seller.cash'), icon: RupeeIcon },
                       { id: 'upi', label: t('seller.upi'), icon: WalletIcon },
+                      { id: 'cash', label: t('seller.cash'), icon: RupeeIcon },
                       { id: 'card', label: t('seller.card'), icon: CreditCardIcon },
                       { id: 'khata', label: t('nav.khata'), icon: LedgerIcon },
                       { id: 'split', label: t('seller.splitPayment'), icon: SwapIcon },
@@ -5043,7 +5047,7 @@ export default function SellerBillingPage() {
                         remainder — the one line that says "ab bill ban sakta hai" — clean
                         off the bottom of the ticket. */}
                     <div className="split-rows">
-                      {['cash', 'upi', 'card', 'bank'].map((mode) => (
+                      {['upi', 'cash', 'card', 'bank'].map((mode) => (
                         <div className="split-row" key={mode}>
                           <div className="split-row__head">
                             <label htmlFor={`split-${mode}`}>{t(`expenses.mode.${mode}`)}</label>
@@ -5157,7 +5161,7 @@ export default function SellerBillingPage() {
                         className="paid-now-mode"
                         value={paidNowMode}
                         onChange={setPaidNowMode}
-                        options={['cash', 'upi', 'card', 'bank'].map((m) => ({ value: m, label: t(`expenses.mode.${m}`) }))}
+                        options={['upi', 'cash', 'card', 'bank'].map((m) => ({ value: m, label: t(`expenses.mode.${m}`) }))}
                       />
                     </div>
 
@@ -6032,7 +6036,7 @@ export default function SellerBillingPage() {
               onChange={(value) => setBillFilter({ paymentMode: value })}
               options={[
                 { value: '', label: t('seller.allModes') },
-                ...['cash', 'upi', 'card', 'khata', 'split'].map((mode) => ({ value: mode, label: billModeLabel(mode) })),
+                ...['upi', 'cash', 'card', 'khata', 'split'].map((mode) => ({ value: mode, label: billModeLabel(mode) })),
               ]}
             />
             <Dropdown
